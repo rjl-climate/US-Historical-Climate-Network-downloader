@@ -1,0 +1,12 @@
+[package]
+name = "rust-ghcn-daily"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.86"
+flate2 = "1.0.30"
+futures = "0.3.30"
+reqwest = "0.12.5"
+tar = "0.4.41"
+tokio = { version = "1.38.0", features = ["full"] }
