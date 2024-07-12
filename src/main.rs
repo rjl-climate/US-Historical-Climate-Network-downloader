@@ -1,59 +1,17 @@
 use anyhow::{Error, Result};
 use flate2::read::GzDecoder;
-use std::fs::File;
-use std::io;
-use std::io::copy;
-use std::io::BufRead;
-use std::io::Cursor;
-use std::path::Path;
-use std::path::PathBuf;
+use futures::future::join_all;
+use indicatif::{ProgressBar, ProgressStyle};
+use reading::Reading;
+use std::{
+    fs::File,
+    io::{self, copy, BufRead, Cursor},
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+};
 use tar::Archive;
 
-#[derive(Debug)]
-struct Reading {
-    id: String,
-    year: u16,
-    month: u8,
-    element: String,
-    values: Vec<Option<f32>>,
-}
-
-impl Reading {
-    fn from_line(line: &str) -> Result<Self> {
-        let id = line[0..11].to_string();
-        let year = line[11..15].parse()?;
-        let month = line[15..17].parse()?;
-        let element = line[17..21].to_string();
-        let values = parse_values(line);
-
-        Ok(Reading {
-            id,
-            year,
-            month,
-            element,
-            values,
-        })
-    }
-}
-
-fn parse_values(line: &str) -> Vec<Option<f32>> {
-    let start_pos = 21;
-    let chunk_length = 8;
-    let num_chunks = 31;
-
-    let values: Vec<Option<f32>> = (0..num_chunks)
-        .map(|i| {
-            let chunk = &line[start_pos + i * chunk_length..start_pos + (i + 1) * chunk_length];
-            let first_five = &chunk[..5].trim();
-            match first_five.parse::<i32>() {
-                Ok(v) if v != -9999 => Some((v as f32) / 100.0),
-                _ => None,
-            }
-        })
-        .collect();
-
-    values
-}
+mod reading;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -78,13 +36,7 @@ async fn main() -> Result<(), Error> {
         .map(|entry| entry.map(|e| e.path()))
         .collect::<Result<Vec<_>, io::Error>>()?;
 
-    let mut readings = Vec::<Reading>::new();
-
-    for file in files.iter().take(2) {
-        println!("Processing '{}'.", file.to_string_lossy());
-        let new_readings = process_file(&file).await?;
-        readings.extend(new_readings);
-    }
+    let readings = process_files_in_parallel(files).await?;
 
     println!("Got {} readings", readings.len());
 
@@ -128,7 +80,10 @@ async fn extract_tar(tar_gz_path: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-async fn process_file(file_path: &Path) -> Result<Vec<Reading>, Error> {
+async fn process_file(
+    file_path: &Path,
+    progress_bar: Arc<Mutex<ProgressBar>>,
+) -> Result<Vec<Reading>, Error> {
     let file = File::open(file_path)?;
     let reader = io::BufReader::new(file);
 
@@ -141,27 +96,42 @@ async fn process_file(file_path: &Path) -> Result<Vec<Reading>, Error> {
         readings.push(reading);
     }
 
+    {
+        let pb = progress_bar.lock().unwrap();
+        pb.inc(1);
+    }
+
     Ok(readings)
 }
 
-// -- Tests ----------------------------------------------------------------------------
+async fn process_files_in_parallel(files: Vec<PathBuf>) -> Result<Vec<Reading>, Error> {
+    let progress_bar = Arc::new(Mutex::new(ProgressBar::new(files.len() as u64)));
+    progress_bar
+        .lock()
+        .unwrap()
+        .set_style(ProgressStyle::default_bar());
 
-#[cfg(test)]
-mod tests {
+    let tasks: Vec<_> = files
+        .iter()
+        .map(|file| {
+            let file = file.clone();
+            let pb = Arc::clone(&progress_bar);
+            tokio::spawn(async move { process_file(&file, pb).await })
+        })
+        .collect();
 
-    use super::*;
-
-    #[test]
-    fn should_parse_line() {
-        let line = "USC00011084192601TOBS-9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999     217  6   28  6   39  6   44  6  100  6  106  6  117  6  106  6  128  6   94  6  189  6";
-        let reading = Reading::from_line(line).unwrap();
-
-        assert_eq!(reading.id, "USC00011084");
-        assert_eq!(reading.year, 1926);
-        assert_eq!(reading.month, 1);
-        assert_eq!(reading.element, "TOBS");
-        assert!(reading.values.len() == 31);
-        assert_eq!(reading.values[0], None);
-        assert_eq!(reading.values[30], Some(1.89));
+    let mut readings = Vec::new();
+    for result in join_all(tasks).await {
+        match result {
+            Ok(Ok(file_readings)) => readings.extend(file_readings),
+            Ok(Err(e)) => eprintln!("Error processing file: {:?}", e),
+            Err(e) => eprintln!("Task join error: {:?}", e),
+        }
     }
+    progress_bar
+        .lock()
+        .unwrap()
+        .finish_with_message("Processing complete");
+
+    Ok(readings)
 }
