@@ -9,3 +9,5 @@ ghcnd_hcn.tar.gz
 ghcnd_hcn/
 
 ghcnd-version.txt
+
+*.sqlite

@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Reading {
     pub id: String,
     pub year: u16,
