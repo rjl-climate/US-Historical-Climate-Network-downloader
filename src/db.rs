@@ -1,30 +1,70 @@
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
-
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
-use rusqlite::Connection;
-use tokio::task;
+use sqlx::{migrate::MigrateDatabase, QueryBuilder, Sqlite, SqlitePool};
 
 use crate::reading::Reading;
 
-pub async fn write_readings_to_sqlite(readings: Vec<Reading>, db_path: PathBuf) -> Result<()> {
-    let number_of_readings = readings.len() * 31;
-    let progress_bar = Arc::new(Mutex::new(
-        ProgressBar::new(number_of_readings as u64).with_message("Saving to database"),
-    ));
-    progress_bar.lock().unwrap().set_style(
+pub async fn insert_readings(readings: Vec<Reading>, db_name: &str) -> Result<()> {
+    // Initialise the progress bar
+    let records = readings.len() * 31;
+    let progress_bar = ProgressBar::new(records as u64).with_message("Updating database");
+    progress_bar.set_style(
         ProgressStyle::with_template("[{eta_precise}] {bar:40.cyan/blue} {pos:>10}/{len:10} {msg}")
             .unwrap()
             .progress_chars("##-"),
     );
 
-    let conn = Connection::open(db_path.clone())?;
+    // Initialise the database
+    let database_url = create_db(db_name).await?;
+    let pool = SqlitePool::connect(&database_url).await?;
 
-    conn.execute("DROP TABLE IF EXISTS readings", [])?;
-    conn.execute(
+    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new("");
+
+    for reading in readings.iter() {
+        for (day, value) in reading.values.iter().enumerate() {
+            qb.push("INSERT INTO readings (station_id, year, month, day, element, value) VALUES (");
+            qb.push_bind(&reading.id);
+            qb.push(", ");
+            qb.push_bind(reading.year as i32); // Cast to i32 for SQL compatibility
+            qb.push(", ");
+            qb.push_bind(reading.month as i32); // Cast to i32 for SQL compatibility
+            qb.push(", ");
+            qb.push_bind((day + 1) as i32); // Day starts from 1, so add 1 to index
+            qb.push(", ");
+            qb.push_bind(&reading.element);
+            qb.push(", ");
+            qb.push_bind(value);
+            qb.push("); ");
+            progress_bar.inc(1);
+        }
+    }
+
+    qb.build().execute(&pool).await?;
+
+    progress_bar.finish_with_message("Database updated");
+
+    Ok(())
+}
+
+async fn create_db(database_name: &str) -> Result<String> {
+    let database_url = format!("sqlite://{database_name}.sqlite");
+
+    if !Sqlite::database_exists(&database_url)
+        .await
+        .unwrap_or(false)
+    {
+        match Sqlite::create_database(&database_url).await {
+            Ok(_) => {}
+            Err(error) => panic!("error: {}", error),
+        }
+    }
+
+    let db = SqlitePool::connect(&database_url).await.unwrap();
+    sqlx::query("DROP TABLE IF EXISTS readings")
+        .execute(&db)
+        .await?;
+
+    sqlx::query(
         "CREATE TABLE readings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             station_id TEXT NOT NULL,
@@ -32,49 +72,40 @@ pub async fn write_readings_to_sqlite(readings: Vec<Reading>, db_path: PathBuf) 
             month INTEGER NOT NULL,
             day INTEGER NOT NULL,
             element TEXT NOT NULL,
-            value REAL
-        )",
-        (),
-    )?;
+            value REAL)",
+    )
+    .execute(&db)
+    .await?;
 
-    let db_path = Arc::new(db_path);
-    let pb = Arc::clone(&progress_bar);
-    let mut tasks = Vec::new();
+    Ok(database_url)
+}
 
-    for r in readings {
-        let db_path = Arc::clone(&db_path);
-        let pb = Arc::clone(&pb);
-        tasks.push(task::spawn(async move {
-            let mut conn = Connection::open(db_path.as_ref())?;
-            let tx = conn.transaction()?;
+// -- Tests -------------------------------------------------------------------
 
-            for (idx, value) in r.values.iter().enumerate() {
-                tx.execute(
-                    r#"
-                        INSERT INTO readings (station_id, year, month, day, element, value)
-                        VALUES (?1, ?2, ?3, ?4, ?5, ?6)"#,
-                    (&r.id, &r.year, &r.month, idx + 1, &r.element, value),
-                )?;
-                {
-                    let pb = pb.lock().unwrap();
-                    pb.inc(1);
-                }
-            }
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::reading::Reading;
 
-            tx.commit()?;
-            Ok::<(), rusqlite::Error>(())
-        }));
+    #[tokio::test]
+    async fn should_insert_readings() {
+        let readings = vec![
+            Reading {
+                id: "USW00094728".to_string(),
+                year: 2019,
+                month: 1,
+                element: "TMAX".to_string(),
+                values: vec![Some(1.0), Some(2.0), Some(3.0)],
+            },
+            Reading {
+                id: "USW00094728".to_string(),
+                year: 2019,
+                month: 1,
+                element: "TMIN".to_string(),
+                values: vec![Some(1.0), Some(2.0), Some(3.0)],
+            },
+        ];
+
+        insert_readings(readings, "test_db").await.unwrap();
     }
-
-    let results = futures::future::join_all(tasks).await;
-    for result in results {
-        result??; // Unwrap and propagate any errors
-    }
-
-    progress_bar
-        .lock()
-        .unwrap()
-        .finish_with_message("Processing complete");
-
-    Ok(())
 }

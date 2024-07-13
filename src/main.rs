@@ -11,7 +11,6 @@ use download::{download_tar, extract_tar};
 use indicatif::ProgressBar;
 
 mod db;
-mod db_fast;
 mod deserialise;
 mod download;
 mod reading;
@@ -19,7 +18,7 @@ mod reading;
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let file_path = Path::new("ghcnd_hcn.tar.gz");
-    let db_path = PathBuf::from("ghcnd_hcn.sqlite");
+    let db_path = "ghcnd_hcn";
     let working_dir = Path::new("ghcnd_hcn");
 
     // download the file if it doesn't exist
@@ -49,8 +48,7 @@ async fn main() -> Result<(), Error> {
     let readings = process_files_in_parallel(files).await?;
 
     // save to database
-    // db::write_readings_to_sqlite(readings, db_path).await?;
-    db_fast::process_readings(readings, db_path).await?;
+    db::insert_readings(readings, db_path).await?;
 
     Ok(())
 }
