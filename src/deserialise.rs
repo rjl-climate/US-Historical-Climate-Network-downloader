@@ -14,17 +14,17 @@ use std::{
 use crate::reading::Reading;
 
 pub async fn process_files_in_parallel(files: Vec<PathBuf>) -> Result<Vec<Reading>, Error> {
-    let progress_bar = Arc::new(Mutex::new(ProgressBar::new(files.len() as u64)));
-    progress_bar
-        .lock()
-        .unwrap()
-        .set_style(ProgressStyle::default_bar());
-
-    println!("WARNING: REMOVE 'TAKE' AFTER DEBUGGING!");
+    let progress_bar = Arc::new(Mutex::new(
+        ProgressBar::new(files.len() as u64).with_message("Processing files"),
+    ));
+    progress_bar.lock().unwrap().set_style(
+        ProgressStyle::with_template("[{eta_precise}] {bar:40.cyan/blue} {pos:>10}/{len:10} {msg}")
+            .unwrap()
+            .progress_chars("##-"),
+    );
 
     let tasks: Vec<_> = files
         .iter()
-        .take(1)
         .map(|file| {
             let file = file.clone();
             let pb = Arc::clone(&progress_bar);
@@ -55,10 +55,9 @@ async fn process_file(
     let file = File::open(file_path)?;
     let reader = io::BufReader::new(file);
 
-    let mut lines = reader.lines();
     let mut readings = Vec::new();
 
-    while let Some(line) = lines.next() {
+    for line in reader.lines() {
         let line = line?;
         let reading = Reading::from_line(&line)?;
         readings.push(reading);

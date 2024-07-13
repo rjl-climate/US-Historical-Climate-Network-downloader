@@ -1,12 +1,14 @@
 use std::{
     io,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use anyhow::{Error, Result};
 
 use deserialise::process_files_in_parallel;
 use download::{download_tar, extract_tar};
+use indicatif::ProgressBar;
 
 mod db;
 mod deserialise;
@@ -21,14 +23,20 @@ async fn main() -> Result<(), Error> {
 
     // download the file if it doesn't exist
     if !file_path.exists() {
-        println!("Downloading '{}'.", file_path.to_string_lossy());
+        let message = format!("Downloading '{}'.", file_path.to_string_lossy());
+        let bar = ProgressBar::new_spinner().with_message(message);
+        bar.enable_steady_tick(Duration::from_millis(100));
         download_tar(file_path).await?;
+        bar.finish();
     }
 
     // extract the contents if it doesn't exist
     if !working_dir.exists() {
-        println!("Extracting '{}'.", file_path.to_string_lossy());
+        let message = format!("Extracting '{}'.", file_path.to_string_lossy());
+        let bar = ProgressBar::new_spinner().with_message(message);
+        bar.enable_steady_tick(Duration::from_millis(100));
         extract_tar(file_path).await?;
+        bar.finish();
     }
 
     // get the files to process
@@ -38,7 +46,6 @@ async fn main() -> Result<(), Error> {
         .collect::<Result<Vec<_>, io::Error>>()?;
 
     let readings = process_files_in_parallel(files).await?;
-    println!("Got {} readings", readings.len());
 
     // save to database
     db::write_readings_to_sqlite(readings, db_path).await?;

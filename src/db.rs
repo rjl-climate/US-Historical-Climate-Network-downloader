@@ -12,11 +12,14 @@ use crate::reading::Reading;
 
 pub async fn write_readings_to_sqlite(readings: Vec<Reading>, db_path: PathBuf) -> Result<()> {
     let number_of_readings = readings.len() * 31;
-    let progress_bar = Arc::new(Mutex::new(ProgressBar::new(number_of_readings as u64)));
-    progress_bar
-        .lock()
-        .unwrap()
-        .set_style(ProgressStyle::default_bar());
+    let progress_bar = Arc::new(Mutex::new(
+        ProgressBar::new(number_of_readings as u64).with_message("Saving to database"),
+    ));
+    progress_bar.lock().unwrap().set_style(
+        ProgressStyle::with_template("[{eta_precise}] {bar:40.cyan/blue} {pos:>10}/{len:10} {msg}")
+            .unwrap()
+            .progress_chars("##-"),
+    );
 
     let conn = Connection::open(db_path.clone())?;
 
