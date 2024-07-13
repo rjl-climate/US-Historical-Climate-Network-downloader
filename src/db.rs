@@ -1,6 +1,6 @@
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
-use sqlx::{migrate::MigrateDatabase, QueryBuilder, Sqlite, SqlitePool};
+use sqlx::{migrate::MigrateDatabase, Execute, QueryBuilder, Sqlite, SqlitePool};
 
 use crate::reading::Reading;
 
@@ -18,28 +18,55 @@ pub async fn insert_readings(readings: Vec<Reading>, db_name: &str) -> Result<()
     let database_url = create_db(db_name).await?;
     let pool = SqlitePool::connect(&database_url).await?;
 
-    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new("");
+    sqlx::query("PRAGMA synchronous = NORMAL")
+        .execute(&pool)
+        .await?;
 
-    for reading in readings.iter() {
-        for (day, value) in reading.values.iter().enumerate() {
-            qb.push("INSERT INTO readings (station_id, year, month, day, element, value) VALUES (");
-            qb.push_bind(&reading.id);
-            qb.push(", ");
-            qb.push_bind(reading.year as i32); // Cast to i32 for SQL compatibility
-            qb.push(", ");
-            qb.push_bind(reading.month as i32); // Cast to i32 for SQL compatibility
-            qb.push(", ");
-            qb.push_bind((day + 1) as i32); // Day starts from 1, so add 1 to index
-            qb.push(", ");
-            qb.push_bind(&reading.element);
-            qb.push(", ");
-            qb.push_bind(value);
-            qb.push("); ");
+    sqlx::query("PRAGMA journal_mode = WAL")
+        .execute(&pool)
+        .await?;
+
+    let mut transaction = pool.begin().await?;
+
+    // Chunk size for batch processing
+    let chunk_size = 100;
+
+    for chunk in readings.chunks(chunk_size) {
+        let mut qb = QueryBuilder::<Sqlite>::new(
+            "INSERT INTO readings (station_id, year, month, day, element, value) VALUES ",
+        );
+
+        for (i, reading) in chunk.iter().enumerate() {
+            for (day, value) in reading.values.iter().enumerate() {
+                if i != 0 || day != 0 {
+                    qb.push(", ");
+                }
+                qb.push("(");
+                qb.push_bind(&reading.id);
+                qb.push(", ");
+                qb.push_bind(reading.year as i32); // Cast to i32 for SQL compatibility
+                qb.push(", ");
+                qb.push_bind(reading.month as i32); // Cast to i32 for SQL compatibility
+                qb.push(", ");
+                qb.push_bind((day + 1) as i32); // Day starts from 1, so add 1 to index
+                qb.push(", ");
+                qb.push_bind(&reading.element);
+                qb.push(", ");
+                qb.push_bind(value);
+                qb.push(")");
+            }
             progress_bar.inc(1);
         }
+
+        // Build and execute the full batch of inserts for this chunk
+        let query = qb.build();
+        // let sql = query.sql();
+        // println!("->> {}", sql);
+        query.execute(&mut *transaction).await?;
     }
 
-    qb.build().execute(&pool).await?;
+    // Commit the transaction after all chunks have been processed
+    transaction.commit().await?;
 
     progress_bar.finish_with_message("Database updated");
 
