@@ -11,6 +11,7 @@ use download::{download_tar, extract_tar};
 use indicatif::ProgressBar;
 
 mod db;
+mod db_fast;
 mod deserialise;
 mod download;
 mod reading;
@@ -48,7 +49,8 @@ async fn main() -> Result<(), Error> {
     let readings = process_files_in_parallel(files).await?;
 
     // save to database
-    db::write_readings_to_sqlite(readings, db_path).await?;
+    // db::write_readings_to_sqlite(readings, db_path).await?;
+    db_fast::process_readings(readings, db_path).await?;
 
     Ok(())
 }

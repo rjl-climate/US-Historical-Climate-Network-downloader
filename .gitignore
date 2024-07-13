@@ -11,3 +11,9 @@ ghcnd_hcn/
 ghcnd-version.txt
 
 *.sqlite
+
+*.sqlite-journal
+
+*.sqlite-shm
+
+*.sqlite-wal
