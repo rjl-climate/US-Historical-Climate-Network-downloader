@@ -48,7 +48,7 @@ async fn main() -> Result<(), Error> {
     let readings = process_files_in_parallel(files).await?;
 
     // save to database
-    db::insert_readings(readings, db_path).await?;
+    db::sqlite::persist(readings, db_path).await?;
 
     Ok(())
 }
