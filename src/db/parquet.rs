@@ -1,131 +1,168 @@
-use std::{fs::File, sync::Arc, time::Duration};
+use std::{fs::File, sync::Arc};
 
 use anyhow::Result;
 use arrow::{
-    array::{ArrayRef, Float32Array, StringArray, UInt16Array, UInt8Array},
+    array::{ArrayRef, Date32Array, Float32Array, StringArray},
+    datatypes::{DataType, Field, Schema},
     record_batch::RecordBatch,
 };
+use chrono::{Datelike, NaiveDate};
 use indicatif::{ProgressBar, ProgressStyle};
-use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
+use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
 
 use crate::reading::Reading;
 
 pub fn save_parquet(readings: &[Reading], file_name: &str) -> Result<()> {
+    let readings = &readings[..100000];
     let days_per_month = 31;
-    let total_rows = (readings.len() * days_per_month);
-
-    // Prepare vectors to hold column data
-    let pb = make_progress_bar(total_rows as u64, "Preparing vectors");
-
-    let mut ids = Vec::with_capacity(total_rows);
-    let mut years = Vec::with_capacity(total_rows);
-    let mut months = Vec::with_capacity(total_rows);
-    let mut days = Vec::with_capacity(total_rows);
-    let mut tmaxs = Vec::with_capacity(total_rows);
-    let mut tmins = Vec::with_capacity(total_rows);
-
-    for reading in readings {
-        let id = reading.id.as_str();
-        let year = reading.year;
-        let month = reading.month;
-
-        for day in 1..=days_per_month {
-            ids.push(id);
-            years.push(year);
-            months.push(month);
-            days.push(day as u16); // Assuming day_idx is 0-based
-
-            let value_index = day - 1;
-            match reading.element.as_str() {
-                "tmax" => {
-                    if let Some(value) = reading.values.get(value_index) {
-                        tmaxs.push(*value);
-                    } else {
-                        tmaxs.push(None);
-                    }
-                    tmins.push(None); // No tmin data for this reading
-                }
-                "tmin" => {
-                    if let Some(value) = reading.values.get(value_index) {
-                        tmins.push(*value);
-                    } else {
-                        tmins.push(None);
-                    }
-                    tmaxs.push(None); // No tmax data for this reading
-                }
-                _ => {
-                    // Placeholder for other elements if needed
-                    tmaxs.push(None);
-                    tmins.push(None);
-                }
-            }
-            pb.inc(1);
-        }
-    }
-    pb.finish_with_message("Vectors prepared");
-
-    // Create Arrow arrays from vectors
-    let bar = ProgressBar::new_spinner().with_message("Creating arrow arrays");
-    bar.enable_steady_tick(Duration::from_millis(100));
-
-    let ids_array = StringArray::from(ids);
-    let years_array = UInt16Array::from(years);
-    let months_array = UInt8Array::from(months);
-    let days_array = UInt16Array::from(days);
-    let tmaxs_array = Float32Array::from(tmaxs);
-    let tmins_array = Float32Array::from(tmins);
-
-    // Create a vector for the RecordBatch
-    let columns: Vec<(&str, ArrayRef)> = vec![
-        ("id", Arc::new(ids_array) as ArrayRef),
-        ("year", Arc::new(years_array) as ArrayRef),
-        ("month", Arc::new(months_array) as ArrayRef),
-        ("day", Arc::new(days_array) as ArrayRef),
-        ("tmax", Arc::new(tmaxs_array) as ArrayRef),
-        ("tmin", Arc::new(tmins_array) as ArrayRef),
-    ];
-    bar.finish();
-
-    // Ensure all columns have the same number of rows
-    let bar = ProgressBar::new_spinner().with_message("Checking");
-    bar.enable_steady_tick(Duration::from_millis(100));
-
-    let num_rows = columns.first().map(|(_, col)| col.len()).unwrap_or(0);
-    for (name, array) in &columns {
-        assert_eq!(
-            array.len(),
-            num_rows,
-            "Column '{}' has incorrect number of rows: expected {}, got {}",
-            name,
-            num_rows,
-            array.len()
-        );
-    }
-    bar.finish();
-
-    // Create RecordBatch
-    let bar = ProgressBar::new_spinner().with_message("Creating record batch");
-    bar.enable_steady_tick(Duration::from_millis(100));
-
-    let batch = RecordBatch::try_from_iter(columns).expect("Failed to create record batch");
-
-    bar.finish();
+    let chunk_size = 10000;
+    let total_rows = readings.len() * days_per_month;
 
     // Initialize the Parquet writer
-    let bar = ProgressBar::new_spinner().with_message("Saving");
-    bar.enable_steady_tick(Duration::from_millis(100));
     let file = File::create(format!("{file_name}.parquet"))?;
+
+    // Define the schema for the RecordBatch
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Utf8, false),
+        Field::new("date", DataType::Date32, true),
+        Field::new("tmax", DataType::Float32, true),
+        Field::new("tmin", DataType::Float32, true),
+        Field::new("prcp", DataType::Float32, true),
+    ]));
+
     let props = WriterProperties::builder()
         .set_compression(parquet::basic::Compression::SNAPPY)
         .build();
 
-    let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))?;
+    let mut writer = ArrowWriter::try_new(file, schema.clone(), Some(props))?;
 
-    writer.write(&batch)?;
+    let mut rows_processed = 0;
+
+    // Prepare vectors to hold column data
+    let pb = make_progress_bar(total_rows as u64, "Writing parquet file chunks");
+
+    while rows_processed < total_rows {
+        let remaining_rows = total_rows - rows_processed;
+        let batch_size = chunk_size.min(remaining_rows);
+
+        let mut ids = Vec::with_capacity(batch_size);
+        let mut date32s = Vec::with_capacity(batch_size);
+        let mut tmaxs = Vec::with_capacity(batch_size);
+        let mut tmins = Vec::with_capacity(batch_size);
+        let mut prcps = Vec::with_capacity(batch_size);
+
+        let mut rows_in_batch = 0;
+
+        for reading in &readings[rows_processed / days_per_month..] {
+            let id = reading.id.as_str();
+            let year = reading.year;
+            let month = reading.month;
+
+            for day in 1..=days_per_month {
+                ids.push(id);
+
+                // Convert year, month, and day to a NaiveDate
+                let date = NaiveDate::from_ymd_opt(year as i32, month as u32, day as u32);
+                match date {
+                    Some(valid_date) => {
+                        let date32 = valid_date.num_days_from_ce()
+                            - NaiveDate::from_ymd_opt(1970, 1, 1)
+                                .unwrap()
+                                .num_days_from_ce();
+                        date32s.push(Some(date32 as i32));
+                    }
+                    None => {
+                        date32s.push(None);
+                    }
+                }
+
+                let value_index = day - 1;
+                match reading.element.as_str().to_lowercase().as_str() {
+                    "tmax" => {
+                        if let Some(value) = reading.values.get(value_index) {
+                            tmaxs.push(*value);
+                        } else {
+                            tmaxs.push(None);
+                        }
+                        tmins.push(None); // No tmin data for this reading
+                        prcps.push(None); // No prcp data for this reading
+                    }
+                    "tmin" => {
+                        if let Some(value) = reading.values.get(value_index) {
+                            tmins.push(*value);
+                        } else {
+                            tmins.push(None);
+                        }
+                        tmaxs.push(None); // No tmax data for this reading
+                        prcps.push(None); // No prcp data for this reading
+                    }
+                    "prcp" => {
+                        if let Some(value) = reading.values.get(value_index) {
+                            prcps.push(*value);
+                        } else {
+                            prcps.push(None);
+                        }
+                        tmaxs.push(None); // No tmax data for this reading
+                        tmins.push(None); // No tmin data for this reading
+                    }
+                    _ => {
+                        // Placeholder for other elements if needed
+                        tmaxs.push(None);
+                        tmins.push(None);
+                        prcps.push(None);
+                    }
+                }
+                rows_processed += 1;
+                rows_in_batch += 1;
+                pb.inc(1);
+
+                if rows_in_batch == batch_size {
+                    break;
+                }
+            }
+
+            if rows_in_batch == batch_size {
+                break;
+            }
+        }
+
+        // Create Arrow arrays from vectors
+        let ids_array = StringArray::from(ids);
+        let date32s_array = Date32Array::from(date32s);
+        let tmaxs_array = Float32Array::from(tmaxs);
+        let tmins_array = Float32Array::from(tmins);
+        let prcps_array = Float32Array::from(prcps);
+
+        // Create a vector for the RecordBatch
+        let columns: Vec<(&str, ArrayRef)> = vec![
+            ("id", Arc::new(ids_array) as ArrayRef),
+            ("date", Arc::new(date32s_array) as ArrayRef),
+            ("tmax", Arc::new(tmaxs_array) as ArrayRef),
+            ("tmin", Arc::new(tmins_array) as ArrayRef),
+            ("prcp", Arc::new(prcps_array) as ArrayRef),
+        ];
+
+        // Ensure all columns have the same number of rows
+        let num_rows = columns.first().map(|(_, col)| col.len()).unwrap_or(0);
+        for (name, array) in &columns {
+            assert_eq!(
+                array.len(),
+                num_rows,
+                "Column '{}' has incorrect number of rows: expected {}, got {}",
+                name,
+                num_rows,
+                array.len()
+            );
+        }
+
+        // Create RecordBatch
+        let batch = RecordBatch::try_from_iter(columns).expect("Failed to create record batch");
+
+        writer.write(&batch)?;
+    }
+    pb.finish_with_message("Finished writing Parquet file");
+
     writer.close()?;
-
-    bar.finish();
-
     Ok(())
 }
 

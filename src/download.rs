@@ -20,8 +20,6 @@ pub async fn download_tar(file_path: &Path) -> Result<(), Error> {
         let mut content = Cursor::new(response.bytes().await?);
         // Write the content to the file
         copy(&mut content, &mut file)?;
-
-        println!("File downloaded successfully!");
     } else {
         println!("Failed to download file: {}", response.status());
     }

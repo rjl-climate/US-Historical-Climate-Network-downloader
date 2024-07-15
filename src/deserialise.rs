@@ -13,7 +13,8 @@ use std::{
 
 use crate::reading::Reading;
 
-pub async fn process_files_in_parallel(files: Vec<PathBuf>) -> Result<Vec<Reading>, Error> {
+/// Load a readings file from the file system and deserialise to a Reading object
+pub async fn deserialise(files: Vec<PathBuf>) -> Result<Vec<Reading>, Error> {
     let progress_bar = Arc::new(Mutex::new(
         ProgressBar::new(files.len() as u64).with_message("Processing files"),
     ));
@@ -60,7 +61,9 @@ async fn process_file(
     for line in reader.lines() {
         let line = line?;
         let reading = Reading::from_line(&line)?;
-        readings.push(reading);
+        if ["PRCP", "TMAX", "TMIN"].contains(&reading.element.as_str()) {
+            readings.push(reading);
+        }
     }
 
     {

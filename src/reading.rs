@@ -15,7 +15,7 @@ impl Reading {
         let year = line[11..15].parse()?;
         let month = line[15..17].parse()?;
         let element = line[17..21].to_string();
-        let values = parse_values(line);
+        let values = parse_values(line, &element);
 
         Ok(Reading {
             id,
@@ -27,7 +27,7 @@ impl Reading {
     }
 }
 
-fn parse_values(line: &str) -> Vec<Option<f32>> {
+fn parse_values(line: &str, element: &str) -> Vec<Option<f32>> {
     let start_pos = 21;
     let chunk_length = 8;
     let num_chunks = 31;
@@ -37,7 +37,7 @@ fn parse_values(line: &str) -> Vec<Option<f32>> {
             let chunk = &line[start_pos + i * chunk_length..start_pos + (i + 1) * chunk_length];
             let first_five = &chunk[..5].trim();
             match first_five.parse::<i32>() {
-                Ok(v) if v != -9999 => Some((v as f32) / 100.0),
+                Ok(v) if v != -9999 => Some((v as f32) / 10.0),
                 _ => None,
             }
         })

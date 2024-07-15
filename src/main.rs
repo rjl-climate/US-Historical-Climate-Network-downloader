@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{Error, Result};
 
-use deserialise::process_files_in_parallel;
+use deserialise::deserialise;
 use download::{download_tar, extract_tar};
 use indicatif::ProgressBar;
 
@@ -23,19 +23,19 @@ async fn main() -> Result<(), Error> {
 
     // download the file if it doesn't exist
     if !file_path.exists() {
-        let message = format!("Downloading '{}'.", file_path.to_string_lossy());
-        let bar = ProgressBar::new_spinner().with_message(message);
-        bar.enable_steady_tick(Duration::from_millis(100));
+        let bar = spinner(format!("Downloading '{}'.", file_path.to_string_lossy()));
+
         download_tar(file_path).await?;
+
         bar.finish();
     }
 
     // extract the contents if it doesn't exist
     if !working_dir.exists() {
-        let message = format!("Extracting '{}'.", file_path.to_string_lossy());
-        let bar = ProgressBar::new_spinner().with_message(message);
-        bar.enable_steady_tick(Duration::from_millis(100));
+        let bar = spinner("Extracting".to_string());
+
         extract_tar(file_path).await?;
+
         bar.finish();
     }
 
@@ -45,10 +45,16 @@ async fn main() -> Result<(), Error> {
         .map(|entry| entry.map(|e| e.path()))
         .collect::<Result<Vec<_>, io::Error>>()?;
 
-    let readings = process_files_in_parallel(files).await?;
+    let readings = deserialise(files).await?;
 
     // save to database
     db::parquet::save_parquet(&readings, db_path)?;
 
     Ok(())
+}
+
+fn spinner(message: String) -> ProgressBar {
+    let bar = ProgressBar::new_spinner().with_message(message.clone());
+    bar.enable_steady_tick(Duration::from_millis(100));
+    bar
 }
