@@ -1,4 +1,4 @@
-use std::{fs::File, sync::Arc};
+use std::{fs::File, sync::Arc, time::Duration};
 
 use crate::reading::Reading;
 use anyhow::Result;
@@ -6,16 +6,30 @@ use arrow::{
     array::{Array, ArrayRef, Float64Array, Int32Array, StringArray},
     record_batch::RecordBatch,
 };
+use indicatif::{ProgressBar, ProgressStyle};
 use parquet::{
     arrow::{arrow_reader::ParquetRecordBatchReaderBuilder, ArrowWriter},
     basic::Compression,
     file::properties::WriterProperties,
 };
 
+pub fn persist(readings: &[Reading], file_name: &str) -> Result<()> {
+    make_batch_multi_column(readings, file_name)?;
+
+    Ok(())
+}
+
 // Create a parquet file with a column of readings for each element type
 // This may make deserialisation faster if only one element is needed
 fn make_batch_multi_column(readings: &[Reading], file_name: &str) -> Result<()> {
+    // Initialise the progress bar
+    // let records = readings.len() * 31;
+    // let pb = make_progress_bar(readings.len(), "Initialising");
+
     // Create the record batch
+    let bar = ProgressBar::new_spinner().with_message("Initialising arrays");
+    bar.enable_steady_tick(Duration::from_millis(100));
+
     let ids: Vec<&str> = readings.iter().map(|r| r.id.as_str()).collect();
     let years: Vec<i32> = readings.iter().map(|r| r.year as i32).collect();
     let months: Vec<i32> = readings.iter().map(|r| r.month as i32).collect();
@@ -24,6 +38,11 @@ fn make_batch_multi_column(readings: &[Reading], file_name: &str) -> Result<()> 
     let mut tmax_values: Vec<Vec<Option<f32>>> = vec![vec![None; readings.len()]; 31];
     let mut tmin_values: Vec<Vec<Option<f32>>> = vec![vec![None; readings.len()]; 31];
     // Add more vectors here for other elements as needed
+
+    bar.finish();
+
+    let size = readings.len() as u64;
+    let pb = make_progress_bar(size, "Loading value arrays");
 
     for (i, reading) in readings.iter().enumerate() {
         for day in 0..31 {
@@ -34,17 +53,23 @@ fn make_batch_multi_column(readings: &[Reading], file_name: &str) -> Result<()> 
                 _ => (),
             }
         }
+        pb.inc(1);
     }
+
+    pb.finish_with_message("Value arrays loaded");
 
     let ids = StringArray::from(ids);
     let years = Int32Array::from(years);
     let months = Int32Array::from(months);
 
+    let bar = ProgressBar::new_spinner().with_message("Initialising max/min values");
+    bar.enable_steady_tick(Duration::from_millis(100));
+
     // Create Arrow arrays for each day of the month for each element type
     let tmax_columns: Vec<Arc<dyn arrow::array::Array>> = tmax_values
         .iter()
         .enumerate()
-        .map(|(day, values)| {
+        .map(|(_day, values)| {
             Arc::new(Float64Array::from(
                 values
                     .clone()
@@ -94,7 +119,20 @@ fn make_batch_multi_column(readings: &[Reading], file_name: &str) -> Result<()> 
 
     let batch = RecordBatch::try_from_iter(columns).expect("Failed to create record batch");
 
+    bar.finish();
+
     // Write it to a parquet file
+    let bar = ProgressBar::new_spinner().with_message("Saving parquet file");
+    bar.enable_steady_tick(Duration::from_millis(100));
+
+    save(&batch, file_name)?;
+
+    bar.finish();
+
+    Ok(())
+}
+
+fn save(batch: &RecordBatch, file_name: &str) -> Result<()> {
     let file = File::create(format!("{file_name}.parquet"))?;
     let props = WriterProperties::builder()
         .set_compression(Compression::SNAPPY)
@@ -102,7 +140,7 @@ fn make_batch_multi_column(readings: &[Reading], file_name: &str) -> Result<()> 
 
     let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))?;
     writer.write(&batch)?;
-    writer.close().unwrap();
+    writer.close()?;
 
     Ok(())
 }
@@ -195,6 +233,16 @@ fn read_readings(file_name: &str) -> Result<Vec<Reading>> {
     }
 
     Ok(readings)
+}
+
+fn make_progress_bar(size: u64, message: &str) -> ProgressBar {
+    let pb = ProgressBar::new(size).with_message(message.to_string());
+    pb.set_style(
+        ProgressStyle::with_template("[{eta_precise}] {bar:40.cyan/blue} {pos:>10}/{len:10} {msg}")
+            .unwrap()
+            .progress_chars("##-"),
+    );
+    pb
 }
 
 // -- Tests -------------------------------------------------------------------

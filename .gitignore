@@ -19,3 +19,5 @@ ghcnd-version.txt
 *.sqlite-wal
 
 .DS_Store
+
+*.parquet
