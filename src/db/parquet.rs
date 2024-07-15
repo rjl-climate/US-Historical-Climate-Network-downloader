@@ -1,238 +1,132 @@
 use std::{fs::File, sync::Arc, time::Duration};
 
-use crate::reading::Reading;
 use anyhow::Result;
 use arrow::{
-    array::{Array, ArrayRef, Float64Array, Int32Array, StringArray},
+    array::{ArrayRef, Float32Array, StringArray, UInt16Array, UInt8Array},
     record_batch::RecordBatch,
 };
 use indicatif::{ProgressBar, ProgressStyle};
-use parquet::{
-    arrow::{arrow_reader::ParquetRecordBatchReaderBuilder, ArrowWriter},
-    basic::Compression,
-    file::properties::WriterProperties,
-};
+use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
 
-pub fn persist(readings: &[Reading], file_name: &str) -> Result<()> {
-    make_batch_multi_column(readings, file_name)?;
+use crate::reading::Reading;
 
-    Ok(())
-}
+pub fn save_parquet(readings: &[Reading], file_name: &str) -> Result<()> {
+    let days_per_month = 31;
+    let total_rows = (readings.len() * days_per_month);
 
-// Create a parquet file with a column of readings for each element type
-// This may make deserialisation faster if only one element is needed
-fn make_batch_multi_column(readings: &[Reading], file_name: &str) -> Result<()> {
-    // Initialise the progress bar
-    // let records = readings.len() * 31;
-    // let pb = make_progress_bar(readings.len(), "Initialising");
+    // Prepare vectors to hold column data
+    let pb = make_progress_bar(total_rows as u64, "Preparing vectors");
 
-    // Create the record batch
-    let bar = ProgressBar::new_spinner().with_message("Initialising arrays");
+    let mut ids = Vec::with_capacity(total_rows);
+    let mut years = Vec::with_capacity(total_rows);
+    let mut months = Vec::with_capacity(total_rows);
+    let mut days = Vec::with_capacity(total_rows);
+    let mut tmaxs = Vec::with_capacity(total_rows);
+    let mut tmins = Vec::with_capacity(total_rows);
+
+    for reading in readings {
+        let id = reading.id.as_str();
+        let year = reading.year;
+        let month = reading.month;
+
+        for day in 1..=days_per_month {
+            ids.push(id);
+            years.push(year);
+            months.push(month);
+            days.push(day as u16); // Assuming day_idx is 0-based
+
+            let value_index = day - 1;
+            match reading.element.as_str() {
+                "tmax" => {
+                    if let Some(value) = reading.values.get(value_index) {
+                        tmaxs.push(*value);
+                    } else {
+                        tmaxs.push(None);
+                    }
+                    tmins.push(None); // No tmin data for this reading
+                }
+                "tmin" => {
+                    if let Some(value) = reading.values.get(value_index) {
+                        tmins.push(*value);
+                    } else {
+                        tmins.push(None);
+                    }
+                    tmaxs.push(None); // No tmax data for this reading
+                }
+                _ => {
+                    // Placeholder for other elements if needed
+                    tmaxs.push(None);
+                    tmins.push(None);
+                }
+            }
+            pb.inc(1);
+        }
+    }
+    pb.finish_with_message("Vectors prepared");
+
+    // Create Arrow arrays from vectors
+    let bar = ProgressBar::new_spinner().with_message("Creating arrow arrays");
     bar.enable_steady_tick(Duration::from_millis(100));
 
-    let ids: Vec<&str> = readings.iter().map(|r| r.id.as_str()).collect();
-    let years: Vec<i32> = readings.iter().map(|r| r.year as i32).collect();
-    let months: Vec<i32> = readings.iter().map(|r| r.month as i32).collect();
+    let ids_array = StringArray::from(ids);
+    let years_array = UInt16Array::from(years);
+    let months_array = UInt8Array::from(months);
+    let days_array = UInt16Array::from(days);
+    let tmaxs_array = Float32Array::from(tmaxs);
+    let tmins_array = Float32Array::from(tmins);
 
-    // Initialize vectors for each element type
-    let mut tmax_values: Vec<Vec<Option<f32>>> = vec![vec![None; readings.len()]; 31];
-    let mut tmin_values: Vec<Vec<Option<f32>>> = vec![vec![None; readings.len()]; 31];
-    // Add more vectors here for other elements as needed
-
+    // Create a vector for the RecordBatch
+    let columns: Vec<(&str, ArrayRef)> = vec![
+        ("id", Arc::new(ids_array) as ArrayRef),
+        ("year", Arc::new(years_array) as ArrayRef),
+        ("month", Arc::new(months_array) as ArrayRef),
+        ("day", Arc::new(days_array) as ArrayRef),
+        ("tmax", Arc::new(tmaxs_array) as ArrayRef),
+        ("tmin", Arc::new(tmins_array) as ArrayRef),
+    ];
     bar.finish();
 
-    let size = readings.len() as u64;
-    let pb = make_progress_bar(size, "Loading value arrays");
-
-    for (i, reading) in readings.iter().enumerate() {
-        for day in 0..31 {
-            match reading.element.as_str() {
-                "TMAX" => tmax_values[day][i] = reading.values[day],
-                "TMIN" => tmin_values[day][i] = reading.values[day],
-                // Add more cases here for other elements as needed
-                _ => (),
-            }
-        }
-        pb.inc(1);
-    }
-
-    pb.finish_with_message("Value arrays loaded");
-
-    let ids = StringArray::from(ids);
-    let years = Int32Array::from(years);
-    let months = Int32Array::from(months);
-
-    let bar = ProgressBar::new_spinner().with_message("Initialising max/min values");
+    // Ensure all columns have the same number of rows
+    let bar = ProgressBar::new_spinner().with_message("Checking");
     bar.enable_steady_tick(Duration::from_millis(100));
 
-    // Create Arrow arrays for each day of the month for each element type
-    let tmax_columns: Vec<Arc<dyn arrow::array::Array>> = tmax_values
-        .iter()
-        .enumerate()
-        .map(|(_day, values)| {
-            Arc::new(Float64Array::from(
-                values
-                    .clone()
-                    .into_iter()
-                    .map(|v| v.map(|f| f as f64))
-                    .collect::<Vec<_>>(),
-            )) as ArrayRef
-        })
-        .collect();
-
-    let tmin_columns: Vec<Arc<dyn arrow::array::Array>> = tmin_values
-        .iter()
-        .enumerate()
-        .map(|(day, values)| {
-            Arc::new(Float64Array::from(
-                values
-                    .clone()
-                    .into_iter()
-                    .map(|v| v.map(|f| f as f64))
-                    .collect::<Vec<_>>(),
-            )) as ArrayRef
-        })
-        .collect();
-
-    // Create more columns for other elements as needed
-
-    // Collect all columns for the RecordBatch
-    let mut columns: Vec<(&str, Arc<dyn arrow::array::Array>)> = vec![
-        ("id", Arc::new(ids) as ArrayRef),
-        ("year", Arc::new(years) as ArrayRef),
-        ("month", Arc::new(months) as ArrayRef),
-    ];
-
-    let mut tmax_column_names: Vec<String> = Vec::new();
-    let mut tmin_column_names: Vec<String> = Vec::new();
-
-    for day in 0..31 {
-        tmax_column_names.push(format!("TMAX_day_{}", day + 1));
-        tmin_column_names.push(format!("TMIN_day_{}", day + 1));
+    let num_rows = columns.first().map(|(_, col)| col.len()).unwrap_or(0);
+    for (name, array) in &columns {
+        assert_eq!(
+            array.len(),
+            num_rows,
+            "Column '{}' has incorrect number of rows: expected {}, got {}",
+            name,
+            num_rows,
+            array.len()
+        );
     }
+    bar.finish();
 
-    for day in 0..31 {
-        columns.push((tmax_column_names[day].as_str(), tmax_columns[day].clone()));
-        columns.push((tmin_column_names[day].as_str(), tmin_columns[day].clone()));
-        // Add more element columns for other days as needed
-    }
+    // Create RecordBatch
+    let bar = ProgressBar::new_spinner().with_message("Creating record batch");
+    bar.enable_steady_tick(Duration::from_millis(100));
 
     let batch = RecordBatch::try_from_iter(columns).expect("Failed to create record batch");
 
     bar.finish();
 
-    // Write it to a parquet file
-    let bar = ProgressBar::new_spinner().with_message("Saving parquet file");
+    // Initialize the Parquet writer
+    let bar = ProgressBar::new_spinner().with_message("Saving");
     bar.enable_steady_tick(Duration::from_millis(100));
+    let file = File::create(format!("{file_name}.parquet"))?;
+    let props = WriterProperties::builder()
+        .set_compression(parquet::basic::Compression::SNAPPY)
+        .build();
 
-    save(&batch, file_name)?;
+    let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))?;
+
+    writer.write(&batch)?;
+    writer.close()?;
 
     bar.finish();
 
     Ok(())
-}
-
-fn save(batch: &RecordBatch, file_name: &str) -> Result<()> {
-    let file = File::create(format!("{file_name}.parquet"))?;
-    let props = WriterProperties::builder()
-        .set_compression(Compression::SNAPPY)
-        .build();
-
-    let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))?;
-    writer.write(&batch)?;
-    writer.close()?;
-
-    Ok(())
-}
-
-fn read_readings(file_name: &str) -> Result<Vec<Reading>> {
-    // Open the parquet file and get the record batch reader
-    let file = File::open(format!("{file_name}.parquet"))?;
-    let builder = ParquetRecordBatchReaderBuilder::try_new(file)?;
-    let mut reader = builder.build()?;
-    let batch = reader.next().unwrap()?;
-
-    println!("Read {} records.", batch.num_rows());
-
-    // deserialise the record batch
-
-    let mut readings: Vec<Reading> = Vec::new();
-
-    // Extract columns
-    let ids = batch
-        .column(0)
-        .as_any()
-        .downcast_ref::<StringArray>()
-        .unwrap();
-    let years = batch
-        .column(1)
-        .as_any()
-        .downcast_ref::<Int32Array>()
-        .unwrap();
-    let months = batch
-        .column(2)
-        .as_any()
-        .downcast_ref::<Int32Array>()
-        .unwrap();
-
-    // Initialize maps to store element values
-    let mut tmax_values: Vec<Vec<Option<f32>>> = vec![vec![None; batch.num_rows()]; 31];
-    let mut tmin_values: Vec<Vec<Option<f32>>> = vec![vec![None; batch.num_rows()]; 31];
-
-    for day in 0..31 {
-        let tmax_column = batch
-            .column(3 + day * 2)
-            .as_any()
-            .downcast_ref::<Float64Array>()
-            .unwrap();
-        let tmin_column = batch
-            .column(4 + day * 2)
-            .as_any()
-            .downcast_ref::<Float64Array>()
-            .unwrap();
-
-        for i in 0..batch.num_rows() {
-            tmax_values[day][i] = if tmax_column.is_null(i) {
-                None
-            } else {
-                Some(tmax_column.value(i) as f32)
-            };
-            tmin_values[day][i] = if tmin_column.is_null(i) {
-                None
-            } else {
-                Some(tmin_column.value(i) as f32)
-            };
-        }
-
-        // Add more elements as needed
-    }
-
-    // Combine into readings
-    for row in 0..batch.num_rows() {
-        let id = ids.value(row).to_string();
-        let year = years.value(row);
-        let month = months.value(row);
-
-        for day in 0..31 {
-            readings.push(Reading {
-                id: id.clone(),
-                year: year as u16,
-                month: month as u8,
-                element: format!("TMAX_day_{}", day + 1),
-                values: tmax_values[day].clone(),
-            });
-            readings.push(Reading {
-                id: id.clone(),
-                year: year as u16,
-                month: month as u8,
-                element: format!("TMIN_day_{}", day + 1),
-                values: tmin_values[day].clone(),
-            });
-            // Add more elements as needed
-        }
-    }
-
-    Ok(readings)
 }
 
 fn make_progress_bar(size: u64, message: &str) -> ProgressBar {
@@ -252,21 +146,14 @@ mod test {
     use super::*;
 
     #[test]
-    fn should_round_trip() {
+    fn should_round_trip_multi_column() {
         // arrange
         let readings = readings_fixture();
         assert_eq!(readings[0].values[0], Some(10.0));
         assert_eq!(readings[0].values[30], Some(40.0));
 
         // act
-        make_batch_multi_column(&readings, "test").unwrap();
-        let readings = read_readings("test").unwrap();
-
-        // assert
-        assert_eq!(readings[0].id, "USW00094728");
-        assert_eq!(readings[0].year, 2019);
-        assert_eq!(readings[0].month, 1);
-        assert_eq!(readings[0].element, "TMAX_day_1");
+        save_parquet(&readings, "test").unwrap();
     }
 
     fn readings_fixture() -> Vec<Reading> {

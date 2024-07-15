@@ -48,7 +48,7 @@ async fn main() -> Result<(), Error> {
     let readings = process_files_in_parallel(files).await?;
 
     // save to database
-    db::parquet::persist(&readings, db_path)?;
+    db::parquet::save_parquet(&readings, db_path)?;
 
     Ok(())
 }
