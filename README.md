@@ -1,8 +1,8 @@
-# US Historical Climate Network daily data
+# US Historical Climate Network data downloader
 
 [NOAA](https://www.ncei.noaa.gov/products/land-based-station/us-historical-climatology-network) maintains a [dataset of daily climate data](https://www.ncei.noaa.gov/pub/data/ghcn/daily/) for the US from 1875 to present. Data includes daily maximum and minimum temperatures, and precipitation, for 1,200 stations.
 
-The raw data is a zipped text format that requires processing for further use:
+The daily raw data is a zipped text format that requires processing for further use:
 
 ```text
 USC00011084192601TMAX-9999   -9999   -9999   -9999   -9999   -9999 ...
@@ -27,11 +27,18 @@ date
 ## Usage
 
 ```bash
-> ghcn-daily # saves file to `ghcnd_hcn.parquet`
+> ghcn daily
 Downloading
 Unpacking
 ...
 File saved to `/Users/richardlyon/ushcn-daily-2024-07-16.parquet`
+
+> ghcn monthly
+Downloading
+Unpacking
+...
+File saved to `/Users/richardlyon/ushcn-monthly-2024-07-16.parquet`
+
 ```
 
 Not included in this repository are any scripts for processing the data. However, as an example:

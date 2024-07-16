@@ -1,5 +1,5 @@
 [package]
-name = "ushcn-daily"
+name = "ushcn"
 version = "0.1.0"
 edition = "2021"
 
@@ -21,6 +21,7 @@ parquet = { version = "52.1.0", features = ["async"] }
 chrono = "0.4.38"
 temp-dir = "0.1.13"
 dirs = "5.0.1"
+clap = { version = "4.5.9", features = ["derive"] }
 
 [dev-dependencies]
 criterion = "0.5.1"

@@ -7,15 +7,14 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use chrono::{Datelike, NaiveDate};
-use indicatif::{ProgressBar, ProgressStyle};
 use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
 
-use crate::reading::Reading;
+use crate::{cli::make_progress_bar, reading::Reading};
 
 pub fn save(readings: &[Reading], file_path: &PathBuf) -> Result<()> {
     // let readings = &readings[..100000];
     let days_per_month = 31;
-    let chunk_size = 10000;
+    let chunk_size = 100000;
     let total_rows = readings.len() * days_per_month;
 
     // Initialize the Parquet writer
@@ -164,16 +163,6 @@ pub fn save(readings: &[Reading], file_path: &PathBuf) -> Result<()> {
 
     writer.close()?;
     Ok(())
-}
-
-fn make_progress_bar(size: u64, message: &str) -> ProgressBar {
-    let pb = ProgressBar::new(size).with_message(message.to_string());
-    pb.set_style(
-        ProgressStyle::with_template("[{eta_precise}] {bar:40.cyan/blue} {pos:>10}/{len:10} {msg}")
-            .unwrap()
-            .progress_chars("##-"),
-    );
-    pb
 }
 
 // -- Tests -------------------------------------------------------------------

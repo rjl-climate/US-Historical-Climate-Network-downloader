@@ -19,7 +19,7 @@ pub async fn deserialise(files: Vec<PathBuf>) -> Result<Vec<Reading>, Error> {
         ProgressBar::new(files.len() as u64).with_message("Processing files"),
     ));
     progress_bar.lock().unwrap().set_style(
-        ProgressStyle::with_template("[{eta_precise}] {bar:40.cyan/blue} {pos:>10}/{len:10} {msg}")
+        ProgressStyle::with_template("[{eta_precise}] {bar:40.cyan/blue} {msg}")
             .unwrap()
             .progress_chars("##-"),
     );
