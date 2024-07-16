@@ -21,3 +21,5 @@ ghcnd-version.txt
 .DS_Store
 
 *.parquet
+
+test

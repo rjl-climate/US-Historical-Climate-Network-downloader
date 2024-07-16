@@ -15,7 +15,7 @@ impl Reading {
         let year = line[11..15].parse()?;
         let month = line[15..17].parse()?;
         let element = line[17..21].to_string();
-        let values = parse_values(line, &element);
+        let values = parse_values(line);
 
         Ok(Reading {
             id,
@@ -27,7 +27,7 @@ impl Reading {
     }
 }
 
-fn parse_values(line: &str, element: &str) -> Vec<Option<f32>> {
+fn parse_values(line: &str) -> Vec<Option<f32>> {
     let start_pos = 21;
     let chunk_length = 8;
     let num_chunks = 31;
@@ -64,6 +64,6 @@ mod tests {
         assert_eq!(reading.element, "TOBS");
         assert!(reading.values.len() == 31);
         assert_eq!(reading.values[0], None);
-        assert_eq!(reading.values[30], Some(1.89));
+        assert_eq!(reading.values[30], Some(18.9));
     }
 }

@@ -19,6 +19,8 @@ tokio = { version = "1.38.0", features = ["full"] }
 arrow = "52.1.0"
 parquet = { version = "52.1.0", features = ["async"] }
 chrono = "0.4.38"
+temp-dir = "0.1.13"
+dirs = "5.0.1"
 
 [dev-dependencies]
 criterion = "0.5.1"

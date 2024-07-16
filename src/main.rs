@@ -1,46 +1,40 @@
-use std::{
-    io,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::{io, path::PathBuf, time::Duration};
 
 use anyhow::{Error, Result};
 
+use chrono::{Datelike, Local};
 use deserialise::deserialise;
+use dirs;
 use download::{download_tar, extract_tar};
 use indicatif::ProgressBar;
+use temp_dir::TempDir;
 
-mod db;
 mod deserialise;
 mod download;
+mod parquet;
 mod reading;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let file_path = Path::new("ghcnd_hcn.tar.gz");
-    let db_path = "ghcnd_hcn";
-    let working_dir = Path::new("ghcnd_hcn");
-
     // download the file if it doesn't exist
-    if !file_path.exists() {
-        let bar = spinner(format!("Downloading '{}'.", file_path.to_string_lossy()));
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.child("ghcnd_hcn.tar.gz");
 
-        download_tar(file_path).await?;
-
-        bar.finish();
-    }
+    let bar = spinner("Downloading".to_string());
+    download_tar(file_path.clone()).await?;
+    bar.finish();
 
     // extract the contents if it doesn't exist
-    if !working_dir.exists() {
-        let bar = spinner("Extracting".to_string());
+    let binding = TempDir::with_prefix("GHCN").unwrap();
+    let working_dir = binding.path();
 
-        extract_tar(file_path).await?;
-
-        bar.finish();
-    }
+    let bar = spinner("Unpacking".to_string());
+    extract_tar(file_path, working_dir).await?;
+    bar.finish();
 
     // get the files to process
     let files: Vec<PathBuf> = working_dir
+        .join("ghcnd_hcn")
         .read_dir()?
         .map(|entry| entry.map(|e| e.path()))
         .collect::<Result<Vec<_>, io::Error>>()?;
@@ -48,7 +42,18 @@ async fn main() -> Result<(), Error> {
     let readings = deserialise(files).await?;
 
     // save to database
-    db::parquet::save_parquet(&readings, db_path)?;
+    let today = Local::now();
+    let file_name = format!(
+        "ushcn-daily-{}-{:02}-{:02}.parquet",
+        today.year(),
+        today.month(),
+        today.day()
+    );
+
+    let db_path = dirs::home_dir().unwrap().join(file_name);
+    parquet::save(&readings, &db_path)?;
+
+    println!("File saved to `{}`", db_path.to_string_lossy());
 
     Ok(())
 }

@@ -1,4 +1,4 @@
-use std::{fs::File, sync::Arc};
+use std::{fs::File, path::PathBuf, sync::Arc};
 
 use anyhow::Result;
 use arrow::{
@@ -12,14 +12,14 @@ use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
 
 use crate::reading::Reading;
 
-pub fn save_parquet(readings: &[Reading], file_name: &str) -> Result<()> {
-    let readings = &readings[..100000];
+pub fn save(readings: &[Reading], file_path: &PathBuf) -> Result<()> {
+    // let readings = &readings[..100000];
     let days_per_month = 31;
     let chunk_size = 10000;
     let total_rows = readings.len() * days_per_month;
 
     // Initialize the Parquet writer
-    let file = File::create(format!("{file_name}.parquet"))?;
+    let file = File::create(file_path)?;
 
     // Define the schema for the RecordBatch
     let schema = Arc::new(Schema::new(vec![
@@ -180,6 +180,7 @@ fn make_progress_bar(size: u64, message: &str) -> ProgressBar {
 
 #[cfg(test)]
 mod test {
+
     use super::*;
 
     #[test]
@@ -190,7 +191,7 @@ mod test {
         assert_eq!(readings[0].values[30], Some(40.0));
 
         // act
-        save_parquet(&readings, "test").unwrap();
+        save(&readings, &PathBuf::from("test")).unwrap();
     }
 
     fn readings_fixture() -> Vec<Reading> {
