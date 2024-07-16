@@ -9,9 +9,9 @@ use arrow::{
 use chrono::{Datelike, NaiveDate};
 use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
 
-use crate::{cli::make_progress_bar, reading::Reading};
+use crate::{cli::make_progress_bar, reading::DailyReading};
 
-pub fn save(readings: &[Reading], file_path: &PathBuf) -> Result<()> {
+pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> {
     // let readings = &readings[..100000];
     let days_per_month = 31;
     let chunk_size = 100000;
@@ -180,24 +180,24 @@ mod test {
         assert_eq!(readings[0].values[30], Some(40.0));
 
         // act
-        save(&readings, &PathBuf::from("test")).unwrap();
+        save_daily(&readings, &PathBuf::from("test")).unwrap();
     }
 
-    fn readings_fixture() -> Vec<Reading> {
+    fn readings_fixture() -> Vec<DailyReading> {
         let mut values = vec![];
         for v in 0..31 {
             values.push(Some((v as f32) + 10.0));
         }
 
         vec![
-            Reading {
+            DailyReading {
                 id: "USW00094728".to_string(),
                 year: 2019,
                 month: 1,
                 element: "TMAX".to_string(),
                 values: values.clone(),
             },
-            Reading {
+            DailyReading {
                 id: "USW00094729".to_string(),
                 year: 2020,
                 month: 2,

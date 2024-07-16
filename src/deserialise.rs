@@ -11,10 +11,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::reading::Reading;
+use crate::reading::DailyReading;
 
 /// Load a readings file from the file system and deserialise to a Reading object
-pub async fn deserialise(files: Vec<PathBuf>) -> Result<Vec<Reading>, Error> {
+pub async fn deserialise(files: Vec<PathBuf>) -> Result<Vec<DailyReading>, Error> {
     let progress_bar = Arc::new(Mutex::new(
         ProgressBar::new(files.len() as u64).with_message("Processing files"),
     ));
@@ -52,7 +52,7 @@ pub async fn deserialise(files: Vec<PathBuf>) -> Result<Vec<Reading>, Error> {
 async fn process_file(
     file_path: &Path,
     progress_bar: Arc<Mutex<ProgressBar>>,
-) -> Result<Vec<Reading>, Error> {
+) -> Result<Vec<DailyReading>, Error> {
     let file = File::open(file_path)?;
     let reader = io::BufReader::new(file);
 
@@ -60,7 +60,7 @@ async fn process_file(
 
     for line in reader.lines() {
         let line = line?;
-        let reading = Reading::from_line(&line)?;
+        let reading = DailyReading::from_line(&line)?;
         if ["PRCP", "TMAX", "TMIN"].contains(&reading.element.as_str()) {
             readings.push(reading);
         }

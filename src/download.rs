@@ -1,17 +1,16 @@
 //! Downloads and extracts the latest version of the specified release.
 
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{copy, Cursor},
     path::{Path, PathBuf},
 };
 
-use anyhow::Error;
+use anyhow::{Error, Result};
 use flate2::read::GzDecoder;
 use tar::Archive;
 
-pub async fn download_tar(file_path: PathBuf) -> Result<(), Error> {
-    let url = "https://www.ncei.noaa.gov/pub/data/ghcn/daily/ghcnd_hcn.tar.gz";
+pub async fn download_tar(url: &str, file_path: PathBuf) -> Result<(), Error> {
     let response = reqwest::get(url).await.expect("Failed to download file");
 
     if response.status().is_success() {
@@ -30,7 +29,7 @@ pub async fn download_tar(file_path: PathBuf) -> Result<(), Error> {
     Ok(())
 }
 
-pub async fn extract_tar(tar_gz_path: PathBuf, working_dir: &Path) -> Result<(), Error> {
+pub async fn extract_tar(tar_gz_path: &PathBuf, working_dir: &Path) -> Result<(), Error> {
     // Open the tar file
     let tar_gz = File::open(tar_gz_path)?;
 
@@ -44,4 +43,24 @@ pub async fn extract_tar(tar_gz_path: PathBuf, working_dir: &Path) -> Result<(),
     archive.unpack(working_dir)?;
 
     Ok(())
+}
+
+pub fn get_extraction_folder(working_dir: &Path) -> Result<PathBuf> {
+    let mut extracted_folders = Vec::new();
+    for entry in fs::read_dir(working_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        // Assuming the tarball extracts into one or more directories, we filter for directories.
+        if path.is_dir() {
+            extracted_folders.push(path);
+        }
+    }
+
+    // Return the first extracted directory
+    if let Some(folder_path) = extracted_folders.first() {
+        Ok(folder_path.clone())
+    } else {
+        Err(Error::msg("No extracted folder found"))
+    }
 }

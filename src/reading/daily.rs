@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 #[derive(Debug, Clone)]
-pub struct Reading {
+pub struct DailyReading {
     pub id: String,
     pub year: u16,
     pub month: u8,
@@ -9,15 +9,15 @@ pub struct Reading {
     pub values: Vec<Option<f32>>,
 }
 
-impl Reading {
+impl DailyReading {
     pub fn from_line(line: &str) -> Result<Self> {
         let id = line[0..11].to_string();
         let year = line[11..15].parse()?;
         let month = line[15..17].parse()?;
         let element = line[17..21].to_string();
-        let values = parse_values(line);
+        let values = parse_daily_values(line);
 
-        Ok(Reading {
+        Ok(DailyReading {
             id,
             year,
             month,
@@ -27,7 +27,7 @@ impl Reading {
     }
 }
 
-fn parse_values(line: &str) -> Vec<Option<f32>> {
+fn parse_daily_values(line: &str) -> Vec<Option<f32>> {
     let start_pos = 21;
     let chunk_length = 8;
     let num_chunks = 31;
@@ -56,7 +56,7 @@ mod tests {
     #[test]
     fn should_parse_line() {
         let line = "USC00011084192601TOBS-9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999     217  6   28  6   39  6   44  6  100  6  106  6  117  6  106  6  128  6   94  6  189  6";
-        let reading = Reading::from_line(line).unwrap();
+        let reading = DailyReading::from_line(line).unwrap();
 
         assert_eq!(reading.id, "USC00011084");
         assert_eq!(reading.year, 1926);

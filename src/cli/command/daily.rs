@@ -12,20 +12,21 @@ use crate::{
 };
 
 pub async fn daily() -> Result<()> {
-    // download the file if it doesn't exist
+    // download the file
+    let url = "https://www.ncei.noaa.gov/pub/data/ghcn/daily/ghcnd_hcn.tar.gz";
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.child("ghcnd_hcn.tar.gz");
 
     let bar = spinner("Downloading...".to_string());
-    download_tar(file_path.clone()).await?;
+    download_tar(url, file_path.clone()).await?;
     bar.finish_with_message("Downloaded");
 
-    // extract the contents if it doesn't exist
+    // extract the contents
     let binding = TempDir::with_prefix("GHCN").unwrap();
     let working_dir = binding.path();
 
     let bar = spinner("Unpacking...".to_string());
-    extract_tar(file_path, working_dir).await?;
+    extract_tar(&file_path, working_dir).await?;
     bar.finish_with_message("Unpacked");
 
     // get the files to process
@@ -37,7 +38,7 @@ pub async fn daily() -> Result<()> {
 
     let readings = deserialise(files).await?;
 
-    // save to database
+    // save to parquet file
     let today = Local::now();
     let file_name = format!(
         "ushcn-daily-{}-{:02}-{:02}.parquet",
@@ -47,7 +48,7 @@ pub async fn daily() -> Result<()> {
     );
 
     let db_path = dirs::home_dir().unwrap().join(file_name);
-    parquet::save(&readings, &db_path)?;
+    parquet::save_daily(&readings, &db_path)?;
 
     println!("File saved to `{}`", db_path.to_string_lossy());
 

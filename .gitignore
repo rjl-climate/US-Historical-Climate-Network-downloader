@@ -23,3 +23,5 @@ ghcnd-version.txt
 *.parquet
 
 test
+
+monthly/
