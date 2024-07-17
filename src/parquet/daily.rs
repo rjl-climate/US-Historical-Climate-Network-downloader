@@ -1,3 +1,5 @@
+//! Save the daily readings to a parquet file.
+
 use std::{fs::File, path::PathBuf, sync::Arc};
 
 use anyhow::Result;
@@ -10,12 +12,11 @@ use chrono::{Datelike, NaiveDate};
 use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
 
 use crate::{
-    cli::make_progress_bar,
+    cli::create_progress_bar,
     reading::{DailyReading, Element},
 };
 
 pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> {
-    // let readings = &readings[..100000];
     let days_per_month = 31;
     let chunk_size = 100000;
     let total_rows = readings.len() * days_per_month;
@@ -41,7 +42,7 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
     let mut rows_processed = 0;
 
     // Prepare vectors to hold column data
-    let pb = make_progress_bar(total_rows as u64, "Writing parquet file chunks");
+    let pb = create_progress_bar(total_rows as u64, "Writing parquet file chunks".to_string());
 
     while rows_processed < total_rows {
         let remaining_rows = total_rows - rows_processed;

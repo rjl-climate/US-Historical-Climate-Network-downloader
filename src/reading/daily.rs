@@ -5,11 +5,17 @@ use anyhow::Result;
 use super::{Element, FileProperties, Reading};
 
 #[derive(Debug, Clone)]
+/// Represents a daily reading.
 pub struct DailyReading {
+    /// station identifier
     pub id: String,
+    /// year of the reading
     pub year: u16,
+    /// month of the reading
     pub month: Option<u16>,
+    /// properties of the reading
     pub properties: FileProperties,
+    /// reading values
     pub values: Vec<Option<f32>>,
 }
 
@@ -36,6 +42,7 @@ impl Reading for DailyReading {
     }
 }
 
+/// Parses the daily values from a line.
 fn parse_daily_values(line: &str) -> Vec<Option<f32>> {
     let start_pos = 21;
     let chunk_length = 8;

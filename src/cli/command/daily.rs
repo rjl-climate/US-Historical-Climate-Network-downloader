@@ -4,25 +4,25 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
-use chrono::{Datelike, Local};
 use tempfile::TempDir;
 
 use crate::{
-    cli::spinner,
+    cli::create_spinner,
     deserialise::deserialise,
     download::{download_tar, extract_tar},
     parquet,
 };
 
+use super::make_parquet_file_name;
+
 pub async fn daily() -> Result<String> {
     let temp_dir = TempDir::new()?;
-
-    let parquet_file_name = make_parquet_file_name();
 
     let archive_filepath = download_archive(temp_dir.path()).await?;
     let archive_dir = extract_archive(&archive_filepath).await?;
     let readings = deserialise(&archive_dir).await?;
 
+    let parquet_file_name = make_parquet_file_name("daily");
     parquet::save_daily(&readings, &parquet_file_name)?;
 
     Ok(parquet_file_name.to_string_lossy().to_string())
@@ -33,7 +33,7 @@ async fn download_archive(temp_dir: &Path) -> Result<PathBuf> {
     let file_name = url.split('/').last().unwrap();
     let file_path = temp_dir.join(file_name);
 
-    let bar = spinner("Downloading archive...".to_string());
+    let bar = create_spinner("Downloading archive...".to_string());
     download_tar(url, file_path.clone()).await?;
     bar.finish_with_message("Downloaded");
 
@@ -43,7 +43,7 @@ async fn download_archive(temp_dir: &Path) -> Result<PathBuf> {
 async fn extract_archive(archive_filepath: &PathBuf) -> Result<PathBuf> {
     let archive_dir = archive_filepath.parent().unwrap();
 
-    let bar = spinner("Unpacking archives...".to_string());
+    let bar = create_spinner("Unpacking archives...".to_string());
     extract_tar(archive_filepath, archive_dir).await?;
     bar.finish_with_message("Unpacked");
 
@@ -75,16 +75,4 @@ fn get_archive_dir(archive_dir: &Path) -> Result<PathBuf> {
     }
 
     Ok(directories[0].clone())
-}
-
-fn make_parquet_file_name() -> PathBuf {
-    let today = Local::now();
-    let file_name = format!(
-        "ushcn-daily-{}-{:02}-{:02}.parquet",
-        today.year(),
-        today.month(),
-        today.day()
-    );
-
-    dirs::home_dir().unwrap().join(file_name)
 }

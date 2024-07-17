@@ -5,11 +5,17 @@ use anyhow::Result;
 use super::{FileProperties, Reading};
 
 #[derive(Debug)]
+/// Represents a monthly reading.
 pub struct MonthlyReading {
+    /// station identifier
     pub id: String,
+    /// year of the reading
     pub year: u16,
+    /// month of the reading
     pub month: Option<u16>,
+    /// properties of the reading
     pub properties: FileProperties,
+    /// reading values
     pub values: Vec<Option<f32>>,
 }
 
@@ -35,6 +41,7 @@ impl Reading for MonthlyReading {
     }
 }
 
+/// Parses the daily values from a line.
 fn parse_monthly_values(line: &str) -> Vec<Option<f32>> {
     // Pad the line with extra spaces to ensure we can extract the expected number of chunks
     let mut padded_line = line.to_string();

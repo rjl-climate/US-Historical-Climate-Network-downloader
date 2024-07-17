@@ -1,3 +1,5 @@
+//! Save the monthly readings to a parquet file.
+
 use anyhow::Result;
 use arrow::{
     array::{ArrayRef, Date32Array, Float32Array, RecordBatch, StringArray},
@@ -8,7 +10,7 @@ use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
 use std::{fs::File, path::PathBuf, sync::Arc};
 
 use crate::{
-    cli::make_progress_bar,
+    cli::create_progress_bar,
     reading::{Dataset, Element, MonthlyReading},
 };
 
@@ -44,7 +46,7 @@ pub fn save_monthly(readings: &[MonthlyReading], file_path: &PathBuf) -> Result<
     let mut rows_processed = 0;
 
     // Prepare vectors to hold column data
-    let pb = make_progress_bar(total_rows as u64, "Writing parquet file chunks");
+    let pb = create_progress_bar(total_rows as u64, "Writing parquet file chunks".to_string());
 
     while rows_processed < total_rows {
         let remaining_rows = total_rows - rows_processed;

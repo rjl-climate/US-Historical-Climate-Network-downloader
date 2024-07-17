@@ -1,4 +1,4 @@
-//! Downloads and extracts the latest version of the specified release.
+//! Downloads and extracts the latest version of the specified dataset.
 
 use std::{
     fs::{self, File},
@@ -10,6 +10,7 @@ use anyhow::{Error, Result};
 use flate2::read::GzDecoder;
 use tar::Archive;
 
+/// Downloads the tarball from the specified URL and saves it to the specified file path.
 pub async fn download_tar(url: &str, file_path: PathBuf) -> Result<(), Error> {
     let response = reqwest::get(url).await.expect("Failed to download file");
 
@@ -29,6 +30,7 @@ pub async fn download_tar(url: &str, file_path: PathBuf) -> Result<(), Error> {
     Ok(())
 }
 
+/// Extracts the tarball at the specified path to the specified working directory.
 pub async fn extract_tar(tar_gz_path: &PathBuf, working_dir: &Path) -> Result<(), Error> {
     // Open the tar file
     let tar_gz = File::open(tar_gz_path)?;
@@ -45,6 +47,7 @@ pub async fn extract_tar(tar_gz_path: &PathBuf, working_dir: &Path) -> Result<()
     Ok(())
 }
 
+/// Returns the path of the extracted folder.
 pub fn get_extraction_folder(working_dir: &Path) -> Result<PathBuf> {
     let mut extracted_folders = Vec::new();
     for entry in fs::read_dir(working_dir)? {

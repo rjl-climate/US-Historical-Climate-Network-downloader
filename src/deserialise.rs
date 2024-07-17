@@ -1,4 +1,6 @@
-//! Generic function for deserialising a folder of archive files to a Vec of Readings
+//! Deserialises a folder of archive files to a Vec of Readings.
+//!
+//! The deserialise function is generic over the Reading trait, which is implemented by the Reading struct.
 
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -10,25 +12,20 @@ use std::{
 use anyhow::Result;
 
 use futures::future::join_all;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 
+use crate::cli::create_progress_bar;
 use crate::reading::Reading;
 
-/// Load a readings file from the file system and deserialise to a Reading object
+/// Read a directory of archive files and deserialise to vec of Readings.
 pub async fn deserialise<R: Reading + Send + 'static>(extraction_dir: &Path) -> Result<Vec<R>> {
     let files: Vec<PathBuf> = extraction_dir
         .read_dir()?
         .map(|entry| entry.map(|e| e.path()))
         .collect::<Result<Vec<_>, io::Error>>()?;
 
-    let progress_bar = Arc::new(Mutex::new(
-        ProgressBar::new(files.len() as u64).with_message("Processing files"),
-    ));
-    progress_bar.lock().unwrap().set_style(
-        ProgressStyle::with_template("[{eta_precise}] {bar:40.cyan/blue} {msg}")
-            .unwrap()
-            .progress_chars("##-"),
-    );
+    let pb = create_progress_bar(files.len() as u64, "Processing files".to_string());
+    let progress_bar = Arc::new(Mutex::new(pb));
 
     let tasks: Vec<_> = files
         .iter()
@@ -55,6 +52,7 @@ pub async fn deserialise<R: Reading + Send + 'static>(extraction_dir: &Path) -> 
     Ok(readings)
 }
 
+/// Processes a single file and return a vec of Readings.
 async fn process_file<R: Reading>(
     file_path: &Path,
     progress_bar: Arc<Mutex<ProgressBar>>,

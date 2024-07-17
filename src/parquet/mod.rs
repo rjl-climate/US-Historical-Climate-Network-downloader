@@ -1,3 +1,5 @@
+//! Handles serialising and saving data to disk in the _parquet_ file format.
+
 pub mod daily;
 pub mod monthly;
 

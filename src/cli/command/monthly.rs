@@ -4,23 +4,25 @@ use std::{
 };
 
 use anyhow::Result;
-use chrono::{Datelike, Local};
 use tempfile::TempDir;
 
 use crate::{
-    cli::make_progress_bar,
+    cli::create_progress_bar,
     deserialise::deserialise,
     download::{download_tar, extract_tar, get_extraction_folder},
     parquet,
 };
 
+use super::make_parquet_file_name;
+
 pub async fn monthly() -> Result<String> {
     let temp_dir = TempDir::new()?;
-    let parquet_file_name = make_parquet_file_name();
 
     let archive_paths = download_archives(temp_dir.path()).await?;
     let extraction_folder = extract_archives(&archive_paths, temp_dir.path()).await?;
     let readings = deserialise(&extraction_folder).await?;
+
+    let parquet_file_name = make_parquet_file_name("monthly");
     parquet::save_monthly(&readings, &parquet_file_name)?;
 
     Ok(parquet_file_name.to_string_lossy().to_string())
@@ -32,7 +34,7 @@ async fn download_archives(temp_dir: &Path) -> Result<Vec<PathBuf>> {
     let file_urls = generate_file_urls(&element_map, &dataset_map);
 
     let total_files = file_urls.len() as u64;
-    let pb = make_progress_bar(total_files, "Downloading archives...");
+    let pb = create_progress_bar(total_files, "Downloading archives...".to_string());
     let mut files = vec![];
 
     for file_url in file_urls {
@@ -44,6 +46,7 @@ async fn download_archives(temp_dir: &Path) -> Result<Vec<PathBuf>> {
 
         pb.inc(1);
     }
+
     pb.finish_with_message("Archives downloaded");
 
     Ok(files)
@@ -51,7 +54,7 @@ async fn download_archives(temp_dir: &Path) -> Result<Vec<PathBuf>> {
 
 async fn extract_archives(archive_paths: &Vec<PathBuf>, working_dir: &Path) -> Result<PathBuf> {
     let total_files = archive_paths.len() as u64;
-    let pb = make_progress_bar(total_files, "Extracting files...");
+    let pb = create_progress_bar(total_files, "Extracting files...".to_string());
 
     for archive_path in archive_paths {
         extract_tar(archive_path, working_dir).await?;
@@ -101,17 +104,6 @@ fn generate_file_urls(
     urls
 }
 
-fn make_parquet_file_name() -> PathBuf {
-    let today = Local::now();
-    let file_name = format!(
-        "ushcn-monthly-{}-{:02}-{:02}.parquet",
-        today.year(),
-        today.month(),
-        today.day()
-    );
-
-    dirs::home_dir().unwrap().join(file_name)
-}
 // -- Tests -------------------------------------------------------------------
 
 #[cfg(test)]

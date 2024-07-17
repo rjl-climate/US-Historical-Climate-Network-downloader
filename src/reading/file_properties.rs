@@ -2,37 +2,8 @@
 
 use anyhow::Result;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Element {
-    Max,
-    Min,
-    Avg,
-    Prcp,
-    Tmax,
-    Tmin,
-    Unknown,
-}
-
-impl Element {
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "prcp" => Element::Prcp,
-            "tmax" => Element::Tmax,
-            "tmin" => Element::Tmin,
-            _ => Element::Unknown,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Dataset {
-    Fls52,
-    Raw,
-    Tob,
-    Unknown,
-}
-
 #[derive(Debug, Clone)]
+/// Represents the type of dataset and the measurement type.
 pub struct FileProperties {
     pub dataset: Dataset,
     pub element: Element,
@@ -81,6 +52,40 @@ impl FileProperties {
         let dataset = Dataset::Unknown;
 
         Ok(FileProperties { element, dataset })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+/// Represents the type of dataset. See the [NOAA documentation](https://www1.ncdc.noaa.gov/pub/data/cdo/documentation/gsom-gsoy_documentation.pdf)
+/// for more information.
+pub enum Dataset {
+    Fls52,
+    Raw,
+    Tob,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+/// Represents the type of measurement. See the [NOAA documentation](https://www1.ncdc.noaa.gov/pub/data/cdo/documentation/gsom-gsoy_documentation.pdf)
+/// for more information.
+pub enum Element {
+    Max,
+    Min,
+    Avg,
+    Prcp,
+    Tmax,
+    Tmin,
+    Unknown,
+}
+
+impl Element {
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "prcp" => Element::Prcp,
+            "tmax" => Element::Tmax,
+            "tmin" => Element::Tmin,
+            _ => Element::Unknown,
+        }
     }
 }
 
