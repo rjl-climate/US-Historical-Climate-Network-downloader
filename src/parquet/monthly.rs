@@ -9,10 +9,7 @@ use std::{fs::File, path::PathBuf, sync::Arc};
 
 use crate::{
     cli::make_progress_bar,
-    reading::{
-        monthly::{Dataset, Element},
-        MonthlyReading,
-    },
+    reading::{Dataset, Element, MonthlyReading},
 };
 
 pub fn save_monthly(readings: &[MonthlyReading], file_path: &PathBuf) -> Result<()> {

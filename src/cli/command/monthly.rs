@@ -16,7 +16,7 @@ use crate::{
     cli::make_progress_bar,
     download::{download_tar, extract_tar, get_extraction_folder},
     parquet,
-    reading::{monthly::FileProperties, MonthlyReading},
+    reading::{FileProperties, MonthlyReading},
 };
 
 pub async fn monthly() -> Result<String> {

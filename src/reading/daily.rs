@@ -1,3 +1,5 @@
+//! Daily reading data structure and parsing logic.
+
 use anyhow::Result;
 
 #[derive(Debug, Clone)]
