@@ -1,27 +1,23 @@
 [package]
 name = "ushcn"
 version = "0.1.0"
+authors = ["Richard Lyon <richlyon@fastmail.com>"]
 edition = "2021"
+description = "US Historical Climatology Network data downloader"
+repository = "https://github.com/rjl-climate/US-Historical-Climate-Network-downloader"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
-sqlx = { version = "0.7.4", features = [
-    "runtime-tokio-rustls",
-    "sqlite",
-    "macros",
-] }
 tar = "0.4.41"
 anyhow = "1.0.86"
 flate2 = "1.0.30"
 futures = "0.3.30"
 indicatif = "0.17.8"
 reqwest = "0.12.5"
-tokio = { version = "1.38.0", features = ["full"] }
+tokio = { version = "1.38.0", features = ["rt-multi-thread", "macros"] }
 arrow = "52.1.0"
 parquet = { version = "52.1.0", features = ["async"] }
 chrono = "0.4.38"
 dirs = "5.0.1"
 clap = { version = "4.5.9", features = ["derive"] }
 tempfile = "3.10.1"
-
-[dev-dependencies]
-criterion = "0.5.1"
