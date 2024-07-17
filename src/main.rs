@@ -1,4 +1,5 @@
 mod cli;
+mod deserialise;
 mod download;
 mod parquet;
 mod reading;

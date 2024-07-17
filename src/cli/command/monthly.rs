@@ -1,22 +1,17 @@
 use std::{
     collections::HashMap,
-    fs::File,
-    io::{self, BufRead},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
 };
 
-use anyhow::{Error, Result};
+use anyhow::Result;
 use chrono::{Datelike, Local};
-use futures::future::join_all;
-use indicatif::{ProgressBar, ProgressStyle};
 use tempfile::TempDir;
 
 use crate::{
     cli::make_progress_bar,
+    deserialise::deserialise,
     download::{download_tar, extract_tar, get_extraction_folder},
     parquet,
-    reading::{MonthlyReading, Reading},
 };
 
 pub async fn monthly() -> Result<String> {
@@ -67,70 +62,6 @@ async fn extract_archives(archive_paths: &Vec<PathBuf>, working_dir: &Path) -> R
     let extraction_folder = get_extraction_folder(working_dir)?;
 
     Ok(extraction_folder)
-}
-
-async fn deserialise(extraction_folder: &Path) -> Result<Vec<MonthlyReading>> {
-    let files: Vec<PathBuf> = extraction_folder
-        .read_dir()?
-        .map(|entry| entry.map(|e| e.path()))
-        .collect::<Result<Vec<_>, io::Error>>()?;
-
-    let progress_bar = Arc::new(Mutex::new(
-        ProgressBar::new(files.len() as u64).with_message("Processing files"),
-    ));
-    progress_bar.lock().unwrap().set_style(
-        ProgressStyle::with_template("[{eta_precise}] {bar:40.cyan/blue} {msg}")
-            .unwrap()
-            .progress_chars("##-"),
-    );
-
-    let tasks: Vec<_> = files
-        .iter()
-        .map(|file| {
-            let file = file.clone();
-            let pb = Arc::clone(&progress_bar);
-            tokio::spawn(async move { process_file(&file, pb).await })
-        })
-        .collect();
-
-    let mut readings = Vec::new();
-    for result in join_all(tasks).await {
-        match result {
-            Ok(Ok(file_readings)) => readings.extend(file_readings),
-            Ok(Err(e)) => eprintln!("Error processing file: {:?}", e),
-            Err(e) => eprintln!("Task join error: {:?}", e),
-        }
-    }
-    progress_bar
-        .lock()
-        .unwrap()
-        .finish_with_message("Processing complete");
-
-    Ok(readings)
-}
-
-async fn process_file(
-    file_path: &Path,
-    progress_bar: Arc<Mutex<ProgressBar>>,
-) -> Result<Vec<MonthlyReading>, Error> {
-    let mut readings = Vec::new();
-
-    let file = File::open(file_path)?;
-    let reader = io::BufReader::new(file);
-    let file_name = file_path.file_name().unwrap().to_str().unwrap();
-
-    for line in reader.lines() {
-        let line = line?;
-        let reading = MonthlyReading::from_line(&line, file_name)?;
-        readings.push(reading);
-    }
-
-    {
-        let pb = progress_bar.lock().unwrap();
-        pb.inc(1);
-    }
-
-    Ok(readings)
 }
 
 fn element_map() -> HashMap<&'static str, &'static str> {

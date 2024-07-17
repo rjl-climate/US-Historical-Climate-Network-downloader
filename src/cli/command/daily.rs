@@ -1,21 +1,17 @@
 use std::{
-    fs::{self, File},
-    io::{self, BufRead},
+    fs::{self},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
 };
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use chrono::{Datelike, Local};
-use futures::future::join_all;
-use indicatif::{ProgressBar, ProgressStyle};
 use tempfile::TempDir;
 
 use crate::{
     cli::spinner,
+    deserialise::deserialise,
     download::{download_tar, extract_tar},
     parquet,
-    reading::{DailyReading, Element, Reading},
 };
 
 pub async fn daily() -> Result<String> {
@@ -54,72 +50,6 @@ async fn extract_archive(archive_filepath: &PathBuf) -> Result<PathBuf> {
     let extraction_dir = get_archive_dir(archive_dir)?;
 
     Ok(extraction_dir)
-}
-
-/// Load a readings file from the file system and deserialise to a Reading object
-pub async fn deserialise(extraction_dir: &Path) -> Result<Vec<DailyReading>, Error> {
-    let files: Vec<PathBuf> = extraction_dir
-        .read_dir()?
-        .map(|entry| entry.map(|e| e.path()))
-        .collect::<Result<Vec<_>, io::Error>>()?;
-
-    let progress_bar = Arc::new(Mutex::new(
-        ProgressBar::new(files.len() as u64).with_message("Processing files"),
-    ));
-    progress_bar.lock().unwrap().set_style(
-        ProgressStyle::with_template("[{eta_precise}] {bar:40.cyan/blue} {msg}")
-            .unwrap()
-            .progress_chars("##-"),
-    );
-
-    let tasks: Vec<_> = files
-        .iter()
-        .map(|file| {
-            let file = file.clone();
-            let pb = Arc::clone(&progress_bar);
-            tokio::spawn(async move { process_file(&file, pb).await })
-        })
-        .collect();
-
-    let mut readings = Vec::new();
-    for result in join_all(tasks).await {
-        match result {
-            Ok(Ok(file_readings)) => readings.extend(file_readings),
-            Ok(Err(e)) => eprintln!("Error processing file: {:?}", e),
-            Err(e) => eprintln!("Task join error: {:?}", e),
-        }
-    }
-    progress_bar
-        .lock()
-        .unwrap()
-        .finish_with_message("Processing complete");
-
-    Ok(readings)
-}
-
-async fn process_file(
-    file_path: &Path,
-    progress_bar: Arc<Mutex<ProgressBar>>,
-) -> Result<Vec<DailyReading>, Error> {
-    let mut readings = Vec::new();
-
-    let file = File::open(file_path)?;
-    let reader = io::BufReader::new(file);
-
-    for line in reader.lines() {
-        let line = line?;
-        let reading = DailyReading::from_line(&line, "")?;
-        if reading.is_valid() {
-            readings.push(reading);
-        }
-    }
-
-    {
-        let pb = progress_bar.lock().unwrap();
-        pb.inc(1);
-    }
-
-    Ok(readings)
 }
 
 // Gets the path to a directory in archive_dir if it is the only one

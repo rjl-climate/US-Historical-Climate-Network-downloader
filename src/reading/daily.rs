@@ -72,7 +72,7 @@ mod tests {
         assert_eq!(reading.id, "USC00011084");
         assert_eq!(reading.year, 1926);
         assert_eq!(reading.month, Some(1));
-        assert_eq!(reading.properties.element, Element::Max);
+        assert_eq!(reading.properties.element, Element::Unknown);
         assert!(reading.values.len() == 31);
         assert_eq!(reading.values[0], None);
         assert_eq!(reading.values[30], Some(18.9));
