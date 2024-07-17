@@ -1,11 +1,13 @@
 pub mod daily;
 pub mod monthly;
+pub mod stations;
 
 use std::path::PathBuf;
 
 use chrono::{Datelike, Local};
 pub use daily::daily;
 pub use monthly::monthly;
+pub use stations::stations;
 
 pub fn make_parquet_file_name(period: &str) -> PathBuf {
     let today = Local::now();

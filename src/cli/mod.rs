@@ -21,6 +21,8 @@ pub enum Commands {
     Daily {},
     /// Get monthly data
     Monthly {},
+    /// Get stations
+    Stations {},
 }
 
 /// Creates a spinner.

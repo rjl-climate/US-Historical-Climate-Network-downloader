@@ -44,6 +44,10 @@ async fn main() -> Result<(), Error> {
             Ok(filename) => println!("File saved to `{}`", filename),
             Err(e) => eprintln!("Error: {}", e),
         },
+        Commands::Stations {} => match command::stations().await {
+            Ok(filename) => println!("Stations saved to `{}`", filename),
+            Err(e) => eprintln!("Error: {}", e),
+        },
     }
 
     Ok(())

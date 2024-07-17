@@ -39,6 +39,10 @@ Unpacking
 ...
 File saved to `/Users/richardlyon/ushcn-monthly-2024-07-16.parquet`
 
+> ghcn stations
+Downloading
+ile saved to `/Users/richardlyon/ghcnd-stations-2024-07-17.parquet`
+
 ```
 
 Not included in this repository are any scripts for processing the data. However, as an example:
