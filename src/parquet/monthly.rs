@@ -82,7 +82,7 @@ pub fn save_monthly(readings: &[MonthlyReading], file_path: &PathBuf) -> Result<
                             - NaiveDate::from_ymd_opt(1970, 1, 1)
                                 .unwrap()
                                 .num_days_from_ce();
-                        date32s.push(Some(date32 as i32));
+                        date32s.push(Some(date32));
                     }
                     None => {
                         date32s.push(None);
@@ -309,7 +309,7 @@ pub fn save_monthly(readings: &[MonthlyReading], file_path: &PathBuf) -> Result<
     Ok(())
 }
 
-fn push_value_or_none(values: &Vec<Option<f32>>, index: usize, target_vec: &mut Vec<Option<f32>>) {
+fn push_value_or_none(values: &[Option<f32>], index: usize, target_vec: &mut Vec<Option<f32>>) {
     if let Some(value) = values.get(index) {
         target_vec.push(*value);
     } else {

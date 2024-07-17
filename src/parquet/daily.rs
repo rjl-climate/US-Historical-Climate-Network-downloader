@@ -68,7 +68,7 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
                             - NaiveDate::from_ymd_opt(1970, 1, 1)
                                 .unwrap()
                                 .num_days_from_ce();
-                        date32s.push(Some(date32 as i32));
+                        date32s.push(Some(date32));
                     }
                     None => {
                         date32s.push(None);
@@ -202,7 +202,7 @@ mod test {
                 year: 2020,
                 month: 2,
                 element: "TMIN".to_string(),
-                values: values,
+                values,
             },
         ]
     }

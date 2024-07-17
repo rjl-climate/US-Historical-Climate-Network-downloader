@@ -1,5 +1,4 @@
 mod cli;
-mod deserialise;
 mod download;
 mod parquet;
 mod reading;
@@ -14,11 +13,11 @@ async fn main() -> Result<(), Error> {
 
     match &cli.command {
         Commands::Daily {} => match command::daily().await {
-            Ok(_) => {}
+            Ok(filename) => println!("File saved to `{}`", filename),
             Err(e) => eprintln!("Error: {}", e),
         },
         Commands::Monthly {} => match command::monthly().await {
-            Ok(_) => {}
+            Ok(filename) => println!("File saved to `{}`", filename),
             Err(e) => eprintln!("Error: {}", e),
         },
     }

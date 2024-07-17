@@ -2814,12 +2814,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "temp-dir"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f227968ec00f0e5322f9b8173c7a0cbcff6181a0a5b28e9892491c286277231"
-
-[[package]]
 name = "tempfile"
 version = "3.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3137,7 +3131,7 @@ dependencies = [
  "reqwest",
  "sqlx",
  "tar",
- "temp-dir",
+ "tempfile",
  "tokio",
 ]
 

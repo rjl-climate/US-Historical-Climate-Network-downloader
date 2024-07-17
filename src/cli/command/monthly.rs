@@ -10,7 +10,7 @@ use anyhow::{Error, Result};
 use chrono::{Datelike, Local};
 use futures::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};
-use temp_dir::TempDir;
+use tempfile::TempDir;
 
 use crate::{
     cli::make_progress_bar,
@@ -19,40 +19,32 @@ use crate::{
     reading::{monthly::FileProperties, MonthlyReading},
 };
 
-pub async fn monthly() -> Result<()> {
-    let _element_map = element_map();
-    let _dataset_map = dataset_map();
-    let temp_dir = TempDir::new().unwrap();
-    let _temp_dir = PathBuf::from("/Users/richardlyon/dev/rust-ghcn-daily/monthly");
-
-    // let file_urls = generate_file_urls(&element_map, &dataset_map);
-    // let archive_paths = download_archives(&file_urls, &temp_dir).await?;
-    // let extraction_folder = extract_archives(&archive_paths, temp_dir).await?;
-
-    let extraction_folder =
-        PathBuf::from("/Users/richardlyon/dev/rust-ghcn-daily/monthly/ushcn.v2.5.5.20240716");
-
-    let readings = deserialise(&extraction_folder).await?;
-
+pub async fn monthly() -> Result<String> {
+    let temp_dir = TempDir::new()?;
     let parquet_file_name = make_parquet_file_name();
+
+    let archive_paths = download_archives(temp_dir.path()).await?;
+    let extraction_folder = extract_archives(&archive_paths, temp_dir.path()).await?;
+    let readings = deserialise(&extraction_folder).await?;
     parquet::save_monthly(&readings, &parquet_file_name)?;
 
-    println!("File saved to `{}`", parquet_file_name.to_string_lossy());
-
-    Ok(())
+    Ok(parquet_file_name.to_string_lossy().to_string())
 }
 
-async fn download_archives(file_urls: &Vec<String>, temp_dir: &PathBuf) -> Result<Vec<PathBuf>> {
+async fn download_archives(temp_dir: &Path) -> Result<Vec<PathBuf>> {
+    let element_map = element_map();
+    let dataset_map = dataset_map();
+    let file_urls = generate_file_urls(&element_map, &dataset_map);
+
     let total_files = file_urls.len() as u64;
     let pb = make_progress_bar(total_files, "Downloading archives...");
     let mut files = vec![];
 
     for file_url in file_urls {
-        let filename = file_url.split("/").last().unwrap();
+        let filename = file_url.split('/').last().unwrap();
         let file_path = temp_dir.join(filename);
-        // let file_path = temp_dir.child(filename);
 
-        download_tar(file_url, file_path.clone()).await?;
+        download_tar(&file_url, file_path.clone()).await?;
         files.push(file_path);
 
         pb.inc(1);
@@ -62,22 +54,22 @@ async fn download_archives(file_urls: &Vec<String>, temp_dir: &PathBuf) -> Resul
     Ok(files)
 }
 
-async fn extract_archives(archive_paths: &Vec<PathBuf>, working_dir: PathBuf) -> Result<PathBuf> {
+async fn extract_archives(archive_paths: &Vec<PathBuf>, working_dir: &Path) -> Result<PathBuf> {
     let total_files = archive_paths.len() as u64;
     let pb = make_progress_bar(total_files, "Extracting files...");
 
     for archive_path in archive_paths {
-        extract_tar(archive_path, &working_dir).await?;
+        extract_tar(archive_path, working_dir).await?;
         pb.inc(1);
     }
     pb.finish_with_message("Files extracted");
 
-    let extraction_folder = get_extraction_folder(&working_dir)?;
+    let extraction_folder = get_extraction_folder(working_dir)?;
 
     Ok(extraction_folder)
 }
 
-async fn deserialise(extraction_folder: &PathBuf) -> Result<Vec<MonthlyReading>> {
+async fn deserialise(extraction_folder: &Path) -> Result<Vec<MonthlyReading>> {
     let files: Vec<PathBuf> = extraction_folder
         .read_dir()?
         .map(|entry| entry.map(|e| e.path()))
@@ -188,9 +180,7 @@ fn make_parquet_file_name() -> PathBuf {
         today.day()
     );
 
-    let db_path = dirs::home_dir().unwrap().join(file_name);
-
-    db_path
+    dirs::home_dir().unwrap().join(file_name)
 }
 // -- Tests -------------------------------------------------------------------
 

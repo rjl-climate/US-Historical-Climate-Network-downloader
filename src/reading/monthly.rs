@@ -42,7 +42,7 @@ impl FileProperties {
                     _ => Element::Unknown,
                 };
 
-                return Ok(FileProperties { element, dataset });
+                Ok(FileProperties { element, dataset })
             }
             4 => {
                 let dataset = Dataset::Fls52;
@@ -53,9 +53,9 @@ impl FileProperties {
                     _ => Element::Unknown,
                 };
 
-                return Ok(FileProperties { dataset, element });
+                Ok(FileProperties { dataset, element })
             }
-            _ => return Err(anyhow!("Invalid file format: {}", file_name)),
+            _ => Err(anyhow!("Invalid file format: {}", file_name)),
         }
     }
 }
