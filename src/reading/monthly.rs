@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use super::FileProperties;
+use super::{FileProperties, Reading};
 
 #[derive(Debug)]
 pub struct MonthlyReading {
@@ -13,8 +13,8 @@ pub struct MonthlyReading {
     pub values: Vec<Option<f32>>,
 }
 
-impl MonthlyReading {
-    pub fn from_line(line: &str, file_name: &str) -> Result<Self> {
+impl Reading for MonthlyReading {
+    fn from_line(line: &str, file_name: &str) -> Result<Self> {
         let id = line[0..11].to_string();
         let year = line[12..16].parse()?;
         let month = None;
@@ -28,6 +28,10 @@ impl MonthlyReading {
             properties,
             values,
         })
+    }
+
+    fn is_valid(&self) -> bool {
+        true
     }
 }
 

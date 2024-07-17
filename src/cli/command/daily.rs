@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     fs::{self, File},
     io::{self, BufRead},
     path::{Path, PathBuf},
@@ -16,7 +15,7 @@ use crate::{
     cli::spinner,
     download::{download_tar, extract_tar},
     parquet,
-    reading::{DailyReading, Element},
+    reading::{DailyReading, Element, Reading},
 };
 
 pub async fn daily() -> Result<String> {
@@ -109,8 +108,8 @@ async fn process_file(
 
     for line in reader.lines() {
         let line = line?;
-        let reading = DailyReading::from_line(&line)?;
-        if [Element::Prcp, Element::Tmax, Element::Tmin].contains(&reading.properties.element) {
+        let reading = DailyReading::from_line(&line, "")?;
+        if reading.is_valid() {
             readings.push(reading);
         }
     }

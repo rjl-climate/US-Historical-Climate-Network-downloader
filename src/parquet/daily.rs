@@ -173,8 +173,6 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
 #[cfg(test)]
 mod test {
 
-    use parquet::file::properties;
-
     use crate::reading::{Dataset, FileProperties};
 
     use super::*;

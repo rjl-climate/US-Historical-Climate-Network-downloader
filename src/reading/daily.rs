@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use super::FileProperties;
+use super::{Element, FileProperties, Reading};
 
 #[derive(Debug, Clone)]
 pub struct DailyReading {
@@ -13,8 +13,8 @@ pub struct DailyReading {
     pub values: Vec<Option<f32>>,
 }
 
-impl DailyReading {
-    pub fn from_line(line: &str) -> Result<Self> {
+impl Reading for DailyReading {
+    fn from_line(line: &str, _file_name: &str) -> Result<Self> {
         let id = line[0..11].to_string();
         let year = line[11..15].parse()?;
         let month = Some(line[15..17].parse()?);
@@ -29,6 +29,10 @@ impl DailyReading {
             properties,
             values,
         })
+    }
+
+    fn is_valid(&self) -> bool {
+        [Element::Prcp, Element::Tmax, Element::Tmin].contains(&self.properties.element)
     }
 }
 
@@ -63,7 +67,7 @@ mod tests {
     #[test]
     fn should_parse_line() {
         let line = "USC00011084192601TOBS-9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999   -9999     217  6   28  6   39  6   44  6  100  6  106  6  117  6  106  6  128  6   94  6  189  6";
-        let reading = DailyReading::from_line(line).unwrap();
+        let reading = DailyReading::from_line(line, "").unwrap();
 
         assert_eq!(reading.id, "USC00011084");
         assert_eq!(reading.year, 1926);
