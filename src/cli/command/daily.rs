@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs::{self, File},
     io::{self, BufRead},
     path::{Path, PathBuf},
@@ -15,19 +16,18 @@ use crate::{
     cli::spinner,
     download::{download_tar, extract_tar},
     parquet,
-    reading::DailyReading,
+    reading::{DailyReading, Element},
 };
 
 pub async fn daily() -> Result<String> {
     let temp_dir = TempDir::new()?;
-    let tmp_path = temp_dir.path().to_owned();
-    println!("->> {:?}", tmp_path);
 
     let parquet_file_name = make_parquet_file_name();
 
     let archive_filepath = download_archive(temp_dir.path()).await?;
     let archive_dir = extract_archive(&archive_filepath).await?;
     let readings = deserialise(&archive_dir).await?;
+
     parquet::save_daily(&readings, &parquet_file_name)?;
 
     Ok(parquet_file_name.to_string_lossy().to_string())
@@ -110,7 +110,7 @@ async fn process_file(
     for line in reader.lines() {
         let line = line?;
         let reading = DailyReading::from_line(&line)?;
-        if ["PRCP", "TMAX", "TMIN"].contains(&reading.element.as_str()) {
+        if [Element::Prcp, Element::Tmax, Element::Tmin].contains(&reading.properties.element) {
             readings.push(reading);
         }
     }

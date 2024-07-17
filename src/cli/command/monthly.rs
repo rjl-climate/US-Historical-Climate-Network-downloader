@@ -16,7 +16,7 @@ use crate::{
     cli::make_progress_bar,
     download::{download_tar, extract_tar, get_extraction_folder},
     parquet,
-    reading::{FileProperties, MonthlyReading},
+    reading::MonthlyReading,
 };
 
 pub async fn monthly() -> Result<String> {
@@ -118,11 +118,10 @@ async fn process_file(
     let file = File::open(file_path)?;
     let reader = io::BufReader::new(file);
     let file_name = file_path.file_name().unwrap().to_str().unwrap();
-    let file_properties = FileProperties::from_file(file_name)?;
 
     for line in reader.lines() {
         let line = line?;
-        let reading = MonthlyReading::from_line(&line, &file_properties)?;
+        let reading = MonthlyReading::from_line(&line, file_name)?;
         readings.push(reading);
     }
 

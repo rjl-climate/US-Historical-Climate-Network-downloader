@@ -1,13 +1,27 @@
-//! Monthly reading dataset and element.
+//! Reading dataset and element.
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Element {
     Max,
     Min,
     Avg,
+    Prcp,
+    Tmax,
+    Tmin,
     Unknown,
+}
+
+impl Element {
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "prcp" => Element::Prcp,
+            "tmax" => Element::Tmax,
+            "tmin" => Element::Tmin,
+            _ => Element::Unknown,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -55,8 +69,18 @@ impl FileProperties {
 
                 Ok(FileProperties { dataset, element })
             }
-            _ => Err(anyhow!("Invalid file format: {}", file_name)),
+            _ => Ok(FileProperties {
+                dataset: Dataset::Unknown,
+                element: Element::Unknown,
+            }),
         }
+    }
+
+    pub fn from_element(element: &str) -> Result<Self> {
+        let element = Element::from_str(element);
+        let dataset = Dataset::Unknown;
+
+        Ok(FileProperties { element, dataset })
     }
 }
 
@@ -74,5 +98,12 @@ mod tests {
         let p2 = FileProperties::from_file("USH00118916.FLs.52j.tmin").unwrap();
         assert_eq!(p2.dataset, Dataset::Fls52);
         assert_eq!(p2.element, Element::Min);
+    }
+
+    #[test]
+    fn should_get_none_for_unknown_file() {
+        let p = FileProperties::from_file("unknown.file").unwrap();
+        assert_eq!(p.dataset, Dataset::Unknown);
+        assert_eq!(p.element, Element::Unknown);
     }
 }

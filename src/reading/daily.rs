@@ -2,12 +2,14 @@
 
 use anyhow::Result;
 
+use super::FileProperties;
+
 #[derive(Debug, Clone)]
 pub struct DailyReading {
     pub id: String,
     pub year: u16,
-    pub month: u8,
-    pub element: String,
+    pub month: Option<u16>,
+    pub properties: FileProperties,
     pub values: Vec<Option<f32>>,
 }
 
@@ -15,15 +17,16 @@ impl DailyReading {
     pub fn from_line(line: &str) -> Result<Self> {
         let id = line[0..11].to_string();
         let year = line[11..15].parse()?;
-        let month = line[15..17].parse()?;
+        let month = Some(line[15..17].parse()?);
         let element = line[17..21].to_string();
+        let properties = FileProperties::from_element(&element)?;
         let values = parse_daily_values(line);
 
         Ok(DailyReading {
             id,
             year,
             month,
-            element,
+            properties,
             values,
         })
     }
@@ -53,6 +56,8 @@ fn parse_daily_values(line: &str) -> Vec<Option<f32>> {
 #[cfg(test)]
 mod tests {
 
+    use crate::reading::Element;
+
     use super::*;
 
     #[test]
@@ -62,8 +67,8 @@ mod tests {
 
         assert_eq!(reading.id, "USC00011084");
         assert_eq!(reading.year, 1926);
-        assert_eq!(reading.month, 1);
-        assert_eq!(reading.element, "TOBS");
+        assert_eq!(reading.month, Some(1));
+        assert_eq!(reading.properties.element, Element::Max);
         assert!(reading.values.len() == 31);
         assert_eq!(reading.values[0], None);
         assert_eq!(reading.values[30], Some(18.9));

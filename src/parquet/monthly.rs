@@ -87,8 +87,8 @@ pub fn save_monthly(readings: &[MonthlyReading], file_path: &PathBuf) -> Result<
                 }
 
                 let idx = month - 1;
-                match r.element {
-                    Element::Max => match r.dataset {
+                match r.properties.element {
+                    Element::Max => match r.properties.dataset {
                         Dataset::Raw => {
                             push_value_or_none(&r.values, idx, &mut max_raws);
                             max_tobs.push(None);
@@ -134,7 +134,7 @@ pub fn save_monthly(readings: &[MonthlyReading], file_path: &PathBuf) -> Result<
                             avg_fls52s.push(None);
                         }
                     },
-                    Element::Min => match r.dataset {
+                    Element::Min => match r.properties.dataset {
                         Dataset::Raw => {
                             push_value_or_none(&r.values, idx, &mut min_raws);
                             max_raws.push(None);
@@ -180,7 +180,7 @@ pub fn save_monthly(readings: &[MonthlyReading], file_path: &PathBuf) -> Result<
                             avg_fls52s.push(None);
                         }
                     },
-                    Element::Avg => match r.dataset {
+                    Element::Avg => match r.properties.dataset {
                         Dataset::Raw => {
                             push_value_or_none(&r.values, idx, &mut avg_raws);
                             max_raws.push(None);

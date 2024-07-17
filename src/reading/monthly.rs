@@ -2,30 +2,30 @@
 
 use anyhow::Result;
 
-use super::{Dataset, Element, FileProperties};
+use super::FileProperties;
 
 #[derive(Debug)]
 pub struct MonthlyReading {
     pub id: String,
     pub year: u16,
-    pub element: Element,
-    pub dataset: Dataset,
+    pub month: Option<u16>,
+    pub properties: FileProperties,
     pub values: Vec<Option<f32>>,
 }
 
 impl MonthlyReading {
-    pub fn from_line(line: &str, file_properties: &FileProperties) -> Result<Self> {
+    pub fn from_line(line: &str, file_name: &str) -> Result<Self> {
         let id = line[0..11].to_string();
         let year = line[12..16].parse()?;
-        let element = file_properties.element.clone();
-        let dataset = file_properties.dataset.clone();
+        let month = None;
+        let properties = FileProperties::from_file(file_name)?;
         let values = parse_monthly_values(line);
 
         Ok(MonthlyReading {
             id,
             year,
-            element,
-            dataset,
+            month,
+            properties,
             values,
         })
     }
@@ -76,12 +76,9 @@ mod tests {
     fn should_parse_line() {
         let line = "USH0048961511894   517a     377a    1096d    1640b    2231     2485a   -9999     2938    -9999    -9999    -9999    -9999    -9999   ";
 
-        let file_properties = FileProperties {
-            element: Element::Max,
-            dataset: Dataset::Raw,
-        };
+        let filename = "USH00297610.raw.tmax";
 
-        let reading = MonthlyReading::from_line(line, &file_properties).unwrap();
+        let reading = MonthlyReading::from_line(line, filename).unwrap();
 
         assert_eq!(reading.id, "USH00489615");
         assert_eq!(reading.year, 1894);
@@ -97,12 +94,9 @@ mod tests {
     fn should_parse_short_line() {
         let line = "USH0045726711892 -9999      532    -9999    -9999 Q   1869b    2209     2481     2734     2233     1711      777  3   -50  3";
 
-        let file_properties = FileProperties {
-            element: Element::Max,
-            dataset: Dataset::Raw,
-        };
+        let filename = "USH00297610.raw.tmax";
 
-        let reading = MonthlyReading::from_line(line, &file_properties).unwrap();
+        let reading = MonthlyReading::from_line(line, filename).unwrap();
 
         assert_eq!(reading.id, "USH00457267");
         assert_eq!(reading.year, 1892);

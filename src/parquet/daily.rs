@@ -9,7 +9,10 @@ use arrow::{
 use chrono::{Datelike, NaiveDate};
 use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
 
-use crate::{cli::make_progress_bar, reading::DailyReading};
+use crate::{
+    cli::make_progress_bar,
+    reading::{DailyReading, Element},
+};
 
 pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> {
     // let readings = &readings[..100000];
@@ -55,7 +58,7 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
         for reading in &readings[rows_processed / days_per_month..] {
             let id = reading.id.as_str();
             let year = reading.year;
-            let month = reading.month;
+            let month = reading.month.unwrap();
 
             for day in 1..=days_per_month {
                 ids.push(id);
@@ -76,8 +79,8 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
                 }
 
                 let value_index = day - 1;
-                match reading.element.as_str().to_lowercase().as_str() {
-                    "tmax" => {
+                match reading.properties.element {
+                    Element::Tmax => {
                         if let Some(value) = reading.values.get(value_index) {
                             tmaxs.push(*value);
                         } else {
@@ -86,7 +89,7 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
                         tmins.push(None); // No tmin data for this reading
                         prcps.push(None); // No prcp data for this reading
                     }
-                    "tmin" => {
+                    Element::Tmin => {
                         if let Some(value) = reading.values.get(value_index) {
                             tmins.push(*value);
                         } else {
@@ -95,7 +98,7 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
                         tmaxs.push(None); // No tmax data for this reading
                         prcps.push(None); // No prcp data for this reading
                     }
-                    "prcp" => {
+                    Element::Prcp => {
                         if let Some(value) = reading.values.get(value_index) {
                             prcps.push(*value);
                         } else {
@@ -170,6 +173,10 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
 #[cfg(test)]
 mod test {
 
+    use parquet::file::properties;
+
+    use crate::reading::{Dataset, FileProperties};
+
     use super::*;
 
     #[test]
@@ -184,6 +191,10 @@ mod test {
     }
 
     fn readings_fixture() -> Vec<DailyReading> {
+        let properties = FileProperties {
+            dataset: Dataset::Unknown,
+            element: Element::Max,
+        };
         let mut values = vec![];
         for v in 0..31 {
             values.push(Some((v as f32) + 10.0));
@@ -193,15 +204,15 @@ mod test {
             DailyReading {
                 id: "USW00094728".to_string(),
                 year: 2019,
-                month: 1,
-                element: "TMAX".to_string(),
+                month: Some(1),
+                properties: properties.clone(),
                 values: values.clone(),
             },
             DailyReading {
                 id: "USW00094729".to_string(),
                 year: 2020,
-                month: 2,
-                element: "TMIN".to_string(),
+                month: Some(2),
+                properties: properties.clone(),
                 values,
             },
         ]
