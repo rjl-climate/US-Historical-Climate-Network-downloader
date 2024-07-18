@@ -63,3 +63,4 @@ df.plot(y="tmax", kind="line", title="Max Temp")
 ## Change log
 
 0.2.1 - Fix bug in monthly data download.
+0.2.2 - Add lat/lon to daily readings

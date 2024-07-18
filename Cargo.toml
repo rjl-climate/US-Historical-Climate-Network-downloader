@@ -1,6 +1,6 @@
 [package]
 name = "ushcn"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Richard Lyon <richlyon@fastmail.com>"]
 edition = "2021"
 description = "US Historical Climatology Network data downloader"
