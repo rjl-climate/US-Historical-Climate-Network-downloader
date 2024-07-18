@@ -31,6 +31,8 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
         Field::new("tmax", DataType::Float32, true),
         Field::new("tmin", DataType::Float32, true),
         Field::new("prcp", DataType::Float32, true),
+        Field::new("lat", DataType::Float32, true),
+        Field::new("lon", DataType::Float32, true),
     ]));
 
     let props = WriterProperties::builder()
@@ -53,6 +55,8 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
         let mut tmaxs = Vec::with_capacity(batch_size);
         let mut tmins = Vec::with_capacity(batch_size);
         let mut prcps = Vec::with_capacity(batch_size);
+        let mut lats = Vec::with_capacity(batch_size);
+        let mut lons = Vec::with_capacity(batch_size);
 
         let mut rows_in_batch = 0;
 
@@ -63,6 +67,9 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
 
             for day in 1..=days_per_month {
                 ids.push(id);
+
+                lats.push(reading.lat);
+                lons.push(reading.lon);
 
                 // Convert year, month, and day to a NaiveDate
                 let date = NaiveDate::from_ymd_opt(year as i32, month as u32, day as u32);
@@ -135,6 +142,8 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
         let tmaxs_array = Float32Array::from(tmaxs);
         let tmins_array = Float32Array::from(tmins);
         let prcps_array = Float32Array::from(prcps);
+        let lats_array = Float32Array::from(lats);
+        let lons_array = Float32Array::from(lons);
 
         // Create a vector for the RecordBatch
         let columns: Vec<(&str, ArrayRef)> = vec![
@@ -143,6 +152,8 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
             ("tmax", Arc::new(tmaxs_array) as ArrayRef),
             ("tmin", Arc::new(tmins_array) as ArrayRef),
             ("prcp", Arc::new(prcps_array) as ArrayRef),
+            ("lat", Arc::new(lats_array) as ArrayRef),
+            ("lon", Arc::new(lons_array) as ArrayRef),
         ];
 
         // Ensure all columns have the same number of rows
@@ -202,6 +213,8 @@ mod test {
         vec![
             DailyReading {
                 id: "USW00094728".to_string(),
+                lat: Some(60.0),
+                lon: Some(-150.0),
                 year: 2019,
                 month: Some(1),
                 properties: properties.clone(),
@@ -209,6 +222,8 @@ mod test {
             },
             DailyReading {
                 id: "USW00094729".to_string(),
+                lat: Some(60.0),
+                lon: Some(-150.0),
                 year: 2020,
                 month: Some(2),
                 properties: properties.clone(),

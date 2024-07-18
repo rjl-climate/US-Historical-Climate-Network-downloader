@@ -25,19 +25,19 @@ pub async fn stations() -> Result<String> {
     Ok(parquet_file_name.to_string_lossy().to_string())
 }
 
-async fn download_archive(temp_dir: &Path) -> Result<PathBuf> {
+pub async fn download_archive(temp_dir: &Path) -> Result<PathBuf> {
     let url = "https://www.ncei.noaa.gov/pub/data/ghcn/daily/ghcnd-stations.txt";
     let file_name = url.split('/').last().unwrap();
     let file_path = temp_dir.join(file_name);
 
-    let bar = create_spinner("Downloading archive...".to_string());
+    let bar = create_spinner("Downloading stations archive...".to_string());
     download_tar(url, file_path.clone()).await?;
-    bar.finish_with_message("Downloaded");
+    bar.finish_with_message("Stations archive downloaded");
 
     Ok(file_path)
 }
 
-fn extract_stations(archive_filepath: &PathBuf) -> Result<Vec<Station>> {
+pub fn extract_stations(archive_filepath: &PathBuf) -> Result<Vec<Station>> {
     let mut stations: Vec<Station> = Vec::new();
 
     let file = File::open(archive_filepath)?;
@@ -52,7 +52,7 @@ fn extract_stations(archive_filepath: &PathBuf) -> Result<Vec<Station>> {
     Ok(stations)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Station {
     pub country_code: String,
     pub network_code: String,
@@ -89,6 +89,13 @@ impl Station {
             state,
             name,
         })
+    }
+
+    pub fn station_id(&self) -> String {
+        format!(
+            "{}{}{}{}",
+            self.country_code, self.network_code, self.id_placeholder, self.coop_id
+        )
     }
 }
 
@@ -148,5 +155,14 @@ mod test {
         let s = " -999.9 ";
         let f = parse_and_filter_f32(s);
         assert!(f.is_none());
+    }
+
+    #[test]
+    fn should_make_station_id() {
+        let line =
+            "USC00437054  44.4200  -72.0194  213.4 VT SAINT JOHNSBURY                    HCN 72614";
+        let s = Station::from_line(line).unwrap();
+
+        assert_eq!(s.station_id(), "USC00437054");
     }
 }

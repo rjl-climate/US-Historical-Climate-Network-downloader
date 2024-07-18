@@ -19,8 +19,8 @@ pub async fn monthly() -> Result<String> {
     let temp_dir = TempDir::new()?;
     let parquet_file_name = make_parquet_file_name("monthly");
 
-    let archive_paths = download_archives(&temp_dir.path()).await?;
-    let extraction_folder = extract_archives(&archive_paths, &temp_dir.path()).await?;
+    let archive_paths = download_archives(temp_dir.path()).await?;
+    let extraction_folder = extract_archives(&archive_paths, temp_dir.path()).await?;
     let readings = deserialise(&extraction_folder).await?;
     parquet::save_monthly(&readings, &parquet_file_name)?;
 
@@ -33,7 +33,7 @@ async fn download_archives(temp_dir: &Path) -> Result<Vec<PathBuf>> {
     let file_urls = generate_file_urls(&element_map, &dataset_map);
 
     let total_files = file_urls.len() as u64;
-    let pb = create_progress_bar(total_files, "Downloading archives...".to_string());
+    let pb = create_progress_bar(total_files, "Downloading monthly archives...".to_string());
     let mut files = vec![];
 
     for file_url in file_urls {
@@ -46,20 +46,20 @@ async fn download_archives(temp_dir: &Path) -> Result<Vec<PathBuf>> {
         pb.inc(1);
     }
 
-    pb.finish_with_message("Archives downloaded");
+    pb.finish_with_message("Monthly archives downloaded");
 
     Ok(files)
 }
 
 async fn extract_archives(archive_paths: &Vec<PathBuf>, working_dir: &Path) -> Result<PathBuf> {
     let total_files = archive_paths.len() as u64;
-    let pb = create_progress_bar(total_files, "Extracting files...".to_string());
+    let pb = create_progress_bar(total_files, "Extracting monthly archives...".to_string());
 
     for archive_path in archive_paths {
         extract_tar(archive_path, working_dir).await?;
         pb.inc(1);
     }
-    pb.finish_with_message("Files extracted");
+    pb.finish_with_message("Monthly archives extracted");
 
     let extraction_folder = get_extraction_folder(working_dir)?;
 

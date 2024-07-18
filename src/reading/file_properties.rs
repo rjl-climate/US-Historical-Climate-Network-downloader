@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 /// Represents the type of dataset and the measurement type.
 pub struct FileProperties {
     pub dataset: Dataset,
@@ -55,17 +55,18 @@ impl FileProperties {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 /// Represents the type of dataset. See the [NOAA documentation](https://www1.ncdc.noaa.gov/pub/data/cdo/documentation/gsom-gsoy_documentation.pdf)
 /// for more information.
 pub enum Dataset {
     Fls52,
     Raw,
     Tob,
+    #[default]
     Unknown,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 /// Represents the type of measurement. See the [NOAA documentation](https://www1.ncdc.noaa.gov/pub/data/cdo/documentation/gsom-gsoy_documentation.pdf)
 /// for more information.
 pub enum Element {
@@ -75,6 +76,7 @@ pub enum Element {
     Prcp,
     Tmax,
     Tmin,
+    #[default]
     Unknown,
 }
 

@@ -9,6 +9,10 @@ use super::{Element, FileProperties, Reading};
 pub struct DailyReading {
     /// station identifier
     pub id: String,
+    /// station latitude
+    pub lat: Option<f32>,
+    /// station longitude
+    pub lon: Option<f32>,
     /// year of the reading
     pub year: u16,
     /// month of the reading
@@ -22,6 +26,8 @@ pub struct DailyReading {
 impl Reading for DailyReading {
     fn from_line(line: &str, _file_name: &str) -> Result<Self> {
         let id = line[0..11].to_string();
+        let lat = None; // FIXME
+        let lon = None; // FIXME
         let year = line[11..15].parse()?;
         let month = Some(line[15..17].parse()?);
         let element = line[17..21].to_string();
@@ -30,6 +36,8 @@ impl Reading for DailyReading {
 
         Ok(DailyReading {
             id,
+            lat,
+            lon,
             year,
             month,
             properties,
