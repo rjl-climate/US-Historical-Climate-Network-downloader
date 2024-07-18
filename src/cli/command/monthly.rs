@@ -17,12 +17,11 @@ use super::make_parquet_file_name;
 
 pub async fn monthly() -> Result<String> {
     let temp_dir = TempDir::new()?;
-
-    let archive_paths = download_archives(temp_dir.path()).await?;
-    let extraction_folder = extract_archives(&archive_paths, temp_dir.path()).await?;
-    let readings = deserialise(&extraction_folder).await?;
-
     let parquet_file_name = make_parquet_file_name("monthly");
+
+    let archive_paths = download_archives(&temp_dir.path()).await?;
+    let extraction_folder = extract_archives(&archive_paths, &temp_dir.path()).await?;
+    let readings = deserialise(&extraction_folder).await?;
     parquet::save_monthly(&readings, &parquet_file_name)?;
 
     Ok(parquet_file_name.to_string_lossy().to_string())

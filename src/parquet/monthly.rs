@@ -254,6 +254,7 @@ pub fn save_monthly(readings: &[MonthlyReading], file_path: &PathBuf) -> Result<
                 break;
             }
         }
+
         // Create Arrow arrays from vectors
         let ids_array = StringArray::from(ids);
         let date32s_array = Date32Array::from(date32s);

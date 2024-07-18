@@ -59,3 +59,7 @@ df.plot(y="tmax", kind="line", title="Max Temp")
 ```
 
 ![max_temp](max_temp.png)
+
+## Change log
+
+0.2.1 - Fix bug in monthly data download.

@@ -60,11 +60,12 @@ async fn process_file<R: Reading>(
     let mut readings = Vec::new();
 
     let file = File::open(file_path)?;
+    let file_name = file_path.file_name().unwrap().to_str().unwrap();
     let reader = io::BufReader::new(file);
 
     for line in reader.lines() {
         let line = line?;
-        let reading = R::from_line(&line, "")?;
+        let reading = R::from_line(&line, file_name)?;
         if reading.is_valid() {
             readings.push(reading);
         }
