@@ -74,7 +74,6 @@ fn parse_daily_values(line: &str) -> Vec<Option<f32>> {
 
 #[cfg(test)]
 mod tests {
-
     use crate::reading::Element;
 
     use super::*;
@@ -88,7 +87,7 @@ mod tests {
         assert_eq!(reading.year, 1926);
         assert_eq!(reading.month, Some(1));
         assert_eq!(reading.properties.element, Element::Unknown);
-        assert!(reading.values.len() == 31);
+        assert_eq!(reading.values.len(), 31);
         assert_eq!(reading.values[0], None);
         assert_eq!(reading.values[30], Some(18.9));
     }

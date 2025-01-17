@@ -25,3 +25,10 @@ ghcnd-version.txt
 test
 
 monthly/
+/.idea/.gitignore
+/.idea/modules.xml
+/.idea/prettier.xml
+/.idea/rust-ghcn-daily.iml
+/.idea/vcs.xml
+
+.idea/dictionaries/

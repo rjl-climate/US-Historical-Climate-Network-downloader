@@ -27,6 +27,7 @@ pub async fn monthly() -> Result<String> {
     Ok(parquet_file_name.to_string_lossy().to_string())
 }
 
+/// Download the monthly archives and return a vector of the paths to the downloaded files.
 async fn download_archives(temp_dir: &Path) -> Result<Vec<PathBuf>> {
     let element_map = element_map();
     let dataset_map = dataset_map();
@@ -51,6 +52,7 @@ async fn download_archives(temp_dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
+///Extract the archives in `archive_paths` to the `working_dir` and return the path to the extraction folder.
 async fn extract_archives(archive_paths: &Vec<PathBuf>, working_dir: &Path) -> Result<PathBuf> {
     let total_files = archive_paths.len() as u64;
     let pb = create_progress_bar(total_files, "Extracting monthly archives...".to_string());
@@ -107,7 +109,6 @@ fn generate_file_urls(
 
 #[cfg(test)]
 mod test {
-
     use super::*;
 
     #[test]

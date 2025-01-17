@@ -80,7 +80,6 @@ fn parse_monthly_values(line: &str) -> Vec<Option<f32>> {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]

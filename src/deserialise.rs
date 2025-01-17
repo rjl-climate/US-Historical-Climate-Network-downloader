@@ -2,22 +2,21 @@
 //!
 //! The deserialise function is generic over the Reading trait, which is implemented by the Reading struct.
 
-use std::fs::File;
-use std::io::{self, BufRead};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
+use std::fs::File;
+use std::io::{self, BufRead};
 
 use anyhow::Result;
-
 use futures::future::join_all;
 use indicatif::ProgressBar;
 
 use crate::cli::create_progress_bar;
 use crate::reading::Reading;
 
-/// Read a directory of archive files and deserialise to vec of Readings.
+/// Read a directory of archive files and deserialise to a vec of Readings.
 pub async fn deserialise<R: Reading + Send + 'static>(extraction_dir: &Path) -> Result<Vec<R>> {
     let files: Vec<PathBuf> = extraction_dir
         .read_dir()?

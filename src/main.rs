@@ -20,15 +20,16 @@
 //! File saved to `/Users/richardlyon/ushcn-daily-2024-07-16.parquet`
 //! ```
 
+use anyhow::{Error, Result};
+use clap::Parser;
+
+use cli::{Cli, command, Commands};
+
 mod cli;
 mod deserialise;
 mod download;
 mod parquet;
 mod reading;
-
-use anyhow::{Error, Result};
-use clap::Parser;
-use cli::{command, Cli, Commands};
 
 #[tokio::main]
 /// The command line utility.

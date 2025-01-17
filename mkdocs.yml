@@ -1,0 +1,10 @@
+site_name: US Historical Climatology Network Analysis
+
+nav:
+  - Home: index.md
+
+
+theme:
+  name: material
+  palette:
+    primary: pink
