@@ -76,9 +76,9 @@ pub async fn download_archive(temp_dir: &Path) -> Result<PathBuf> {
     let file_name = url.split('/').last().unwrap();
     let file_path = temp_dir.join(file_name);
 
-    let bar = create_spinner("Downloading stations archive...".to_string());
+    let bar = create_spinner("Downloading stations data (parallel)...".to_string());
     download_tar(url, file_path.clone()).await?;
-    bar.finish_with_message("Stations archive downloaded");
+    bar.finish_with_message("✓ Stations data downloaded");
 
     Ok(file_path)
 }

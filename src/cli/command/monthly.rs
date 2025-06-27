@@ -34,20 +34,25 @@ async fn download_archives(temp_dir: &Path) -> Result<Vec<PathBuf>> {
     let file_urls = generate_file_urls(&element_map, &dataset_map);
 
     let total_files = file_urls.len() as u64;
-    let pb = create_progress_bar(total_files, "Downloading monthly archives...".to_string());
-    let mut files = vec![];
+    let pb = create_progress_bar(total_files, "Downloading monthly archives (parallel)...".to_string());
+    
+    // Download all files in parallel
+    let download_tasks: Vec<_> = file_urls.into_iter().map(|file_url| {
+        let filename = file_url.split('/').last().unwrap().to_string();
+        let file_path = temp_dir.join(&filename);
+        let pb_clone = pb.clone();
+        
+        async move {
+            let result = download_tar(&file_url, file_path.clone()).await;
+            pb_clone.inc(1);
+            result.map(|_| file_path)
+        }
+    }).collect();
+    
+    let files: Result<Vec<_>, _> = futures::future::try_join_all(download_tasks).await;
+    let files = files?;
 
-    for file_url in file_urls {
-        let filename = file_url.split('/').last().unwrap();
-        let file_path = temp_dir.join(filename);
-
-        download_tar(&file_url, file_path.clone()).await?;
-        files.push(file_path);
-
-        pb.inc(1);
-    }
-
-    pb.finish_with_message("Monthly archives downloaded");
+    pb.finish_with_message("✓ Monthly archives downloaded (parallel)");
 
     Ok(files)
 }

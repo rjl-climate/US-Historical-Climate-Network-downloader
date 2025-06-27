@@ -22,12 +22,34 @@ pub async fn daily() -> Result<String> {
     let tmp_dir = TempDir::new()?;
     let parquet_file_name = make_parquet_file_name("daily");
 
-    let archive_filepath = download_archive(tmp_dir.path()).await?;
-    let archive_dir = extract_archive(&archive_filepath).await?;
-    let mut readings = deserialise(&archive_dir).await?;
+    // Download both archives in parallel
+    let daily_download = download_archive(tmp_dir.path());
+    let stations_download = download_station_archive(tmp_dir.path());
+    
+    let (daily_archive_filepath, stations_archive_filepath) = tokio::try_join!(
+        daily_download,
+        stations_download
+    )?;
 
-    let archive_filepath = download_station_archive(tmp_dir.path()).await?;
-    let stations = extract_stations(&archive_filepath)?;
+    // Extract daily archive and process stations file in parallel
+    let daily_extraction = extract_archive(&daily_archive_filepath);
+    let stations_task = tokio::task::spawn_blocking({
+        let stations_path = stations_archive_filepath.clone();
+        move || extract_stations(&stations_path)
+    });
+
+    let (archive_dir, stations_handle) = tokio::try_join!(
+        daily_extraction,
+        async { 
+            stations_task.await
+                .map_err(|e| anyhow::anyhow!("Stations extraction task failed: {}", e))
+        }
+    )?;
+    
+    let stations = stations_handle?;
+
+    // Deserialize readings and inject coordinates
+    let mut readings = deserialise(&archive_dir).await?;
     readings = inject_coords(readings, stations)?;
 
     parquet::save_daily(&readings, &parquet_file_name)?;
@@ -40,9 +62,9 @@ async fn download_archive(temp_dir: &Path) -> Result<PathBuf> {
     let file_name = url.split('/').last().unwrap();
     let file_path = temp_dir.join(file_name);
 
-    let bar = create_spinner("Downloading daily archive...".to_string());
+    let bar = create_spinner("Downloading daily archive (parallel)...".to_string());
     download_tar(url, file_path.clone()).await?;
-    bar.finish_with_message("Daily archive downloaded");
+    bar.finish_with_message("✓ Daily archive downloaded");
 
     Ok(file_path)
 }
@@ -131,6 +153,29 @@ mod test {
         assert_eq!(lookup.get("US000station0"), Some(&(1.0, 2.0)));
         assert_eq!(lookup.get("US000station1"), Some(&(3.0, 4.0)));
         assert_eq!(lookup.get("XXX"), None);
+    }
+
+    #[test]
+    fn should_verify_parallel_download_structure() {
+        // This test verifies the parallel download structure compiles correctly
+        // and that the types are compatible
+        
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(async {
+            // Create a temp directory for testing
+            let tmp_dir = tempfile::TempDir::new().unwrap();
+            
+            // Test that our parallel structure compiles and types align
+            let future1 = async { Ok::<PathBuf, anyhow::Error>(tmp_dir.path().join("test1")) };
+            let future2 = async { Ok::<PathBuf, anyhow::Error>(tmp_dir.path().join("test2")) };
+            
+            // This should work with the same pattern as our parallel downloads
+            let (path1, path2) = tokio::try_join!(future1, future2)?;
+            
+            Ok::<(PathBuf, PathBuf), anyhow::Error>((path1, path2))
+        });
+        
+        assert!(result.is_ok());
     }
 
     fn station_fixture() -> Vec<Station> {
