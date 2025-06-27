@@ -4,7 +4,7 @@ use std::{fs::File, path::PathBuf, sync::Arc};
 
 use anyhow::Result;
 use arrow::{
-    array::{ArrayRef, Date32Array, Float32Array, StringArray},
+    array::{Date32Array, Float32Array, StringArray},
     datatypes::{DataType, Field, Schema},
     record_batch::RecordBatch,
 };
@@ -17,20 +17,27 @@ use crate::{
 };
 
 pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> {
-    let days_per_month = 31;
     let chunk_size = 100000;
-    let total_rows = readings.len() * days_per_month;
+    
+    // Calculate total actual rows (only for days with values)
+    let mut total_actual_rows = 0;
+    for reading in readings {
+        for value in &reading.values {
+            if value.is_some() {
+                total_actual_rows += 1;
+            }
+        }
+    }
 
-    // Initialize the Parquet writer
     let file = File::create(file_path)?;
 
-    // Define the schema for the RecordBatch
+    // New efficient long format schema
     let schema = Arc::new(Schema::new(vec![
         Field::new("id", DataType::Utf8, false),
-        Field::new("date", DataType::Date32, true),
-        Field::new("tmax", DataType::Float32, true),
-        Field::new("tmin", DataType::Float32, true),
-        Field::new("prcp", DataType::Float32, true),
+        Field::new("date", DataType::Date32, false),
+        Field::new("element", DataType::Utf8, false),
+        Field::new("dataset", DataType::Utf8, false),
+        Field::new("value", DataType::Float32, false),
         Field::new("lat", DataType::Float32, true),
         Field::new("lon", DataType::Float32, true),
     ]));
@@ -40,144 +47,134 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
         .build();
 
     let mut writer = ArrowWriter::try_new(file, schema.clone(), Some(props))?;
+    let pb = create_progress_bar(total_actual_rows as u64, "Writing parquet file".to_string());
 
-    let mut rows_processed = 0;
+    let mut current_batch_rows = 0;
+    let mut ids = Vec::with_capacity(chunk_size);
+    let mut dates = Vec::with_capacity(chunk_size);
+    let mut elements = Vec::with_capacity(chunk_size);
+    let mut datasets = Vec::with_capacity(chunk_size);
+    let mut values = Vec::with_capacity(chunk_size);
+    let mut lats = Vec::with_capacity(chunk_size);
+    let mut lons = Vec::with_capacity(chunk_size);
 
-    // Prepare vectors to hold column data
-    let pb = create_progress_bar(total_rows as u64, "Writing parquet file chunks".to_string());
+    for reading in readings {
+        let year = reading.year;
+        let month = reading.month.unwrap();
+        let element_str = element_to_string(&reading.properties.element);
+        let dataset_str = dataset_to_string(&reading.properties.dataset);
 
-    while rows_processed < total_rows {
-        let remaining_rows = total_rows - rows_processed;
-        let batch_size = chunk_size.min(remaining_rows);
+        for (day_index, value_opt) in reading.values.iter().enumerate() {
+            if let Some(value) = value_opt {
+                let day = (day_index + 1) as u32;
+                
+                // Create date
+                if let Some(valid_date) = NaiveDate::from_ymd_opt(year as i32, month as u32, day) {
+                    let date32 = valid_date.num_days_from_ce()
+                        - NaiveDate::from_ymd_opt(1970, 1, 1).unwrap().num_days_from_ce();
 
-        let mut ids = Vec::with_capacity(batch_size);
-        let mut date32s = Vec::with_capacity(batch_size);
-        let mut tmaxs = Vec::with_capacity(batch_size);
-        let mut tmins = Vec::with_capacity(batch_size);
-        let mut prcps = Vec::with_capacity(batch_size);
-        let mut lats = Vec::with_capacity(batch_size);
-        let mut lons = Vec::with_capacity(batch_size);
+                    ids.push(reading.id.clone());
+                    dates.push(date32);
+                    elements.push(element_str.clone());
+                    datasets.push(dataset_str.clone());
+                    values.push(*value);
+                    lats.push(reading.lat);
+                    lons.push(reading.lon);
 
-        let mut rows_in_batch = 0;
+                    current_batch_rows += 1;
+                    pb.inc(1);
 
-        for reading in &readings[rows_processed / days_per_month..] {
-            let id = reading.id.as_str();
-            let year = reading.year;
-            let month = reading.month.unwrap();
-
-            for day in 1..=days_per_month {
-                ids.push(id);
-
-                lats.push(reading.lat);
-                lons.push(reading.lon);
-
-                // Convert year, month, and day to a NaiveDate
-                let date = NaiveDate::from_ymd_opt(year as i32, month as u32, day as u32);
-                match date {
-                    Some(valid_date) => {
-                        let date32 = valid_date.num_days_from_ce()
-                            - NaiveDate::from_ymd_opt(1970, 1, 1)
-                                .unwrap()
-                                .num_days_from_ce();
-                        date32s.push(Some(date32));
+                    // Write batch when full
+                    if current_batch_rows >= chunk_size {
+                        write_batch(&mut writer, &ids, &dates, &elements, &datasets, &values, &lats, &lons)?;
+                        
+                        // Clear vectors
+                        ids.clear();
+                        dates.clear();
+                        elements.clear();
+                        datasets.clear();
+                        values.clear();
+                        lats.clear();
+                        lons.clear();
+                        current_batch_rows = 0;
                     }
-                    None => {
-                        date32s.push(None);
-                    }
-                }
-
-                let value_index = day - 1;
-                match reading.properties.element {
-                    Element::Tmax => {
-                        if let Some(value) = reading.values.get(value_index) {
-                            tmaxs.push(*value);
-                        } else {
-                            tmaxs.push(None);
-                        }
-                        tmins.push(None); // No tmin data for this reading
-                        prcps.push(None); // No prcp data for this reading
-                    }
-                    Element::Tmin => {
-                        if let Some(value) = reading.values.get(value_index) {
-                            tmins.push(*value);
-                        } else {
-                            tmins.push(None);
-                        }
-                        tmaxs.push(None); // No tmax data for this reading
-                        prcps.push(None); // No prcp data for this reading
-                    }
-                    Element::Prcp => {
-                        if let Some(value) = reading.values.get(value_index) {
-                            prcps.push(*value);
-                        } else {
-                            prcps.push(None);
-                        }
-                        tmaxs.push(None); // No tmax data for this reading
-                        tmins.push(None); // No tmin data for this reading
-                    }
-                    _ => {
-                        // Placeholder for other elements if needed
-                        tmaxs.push(None);
-                        tmins.push(None);
-                        prcps.push(None);
-                    }
-                }
-                rows_processed += 1;
-                rows_in_batch += 1;
-                pb.inc(1);
-
-                if rows_in_batch == batch_size {
-                    break;
                 }
             }
-
-            if rows_in_batch == batch_size {
-                break;
-            }
         }
-
-        // Create Arrow arrays from vectors
-        let ids_array = StringArray::from(ids);
-        let date32s_array = Date32Array::from(date32s);
-        let tmaxs_array = Float32Array::from(tmaxs);
-        let tmins_array = Float32Array::from(tmins);
-        let prcps_array = Float32Array::from(prcps);
-        let lats_array = Float32Array::from(lats);
-        let lons_array = Float32Array::from(lons);
-
-        // Create a vector for the RecordBatch
-        let columns: Vec<(&str, ArrayRef)> = vec![
-            ("id", Arc::new(ids_array) as ArrayRef),
-            ("date", Arc::new(date32s_array) as ArrayRef),
-            ("tmax", Arc::new(tmaxs_array) as ArrayRef),
-            ("tmin", Arc::new(tmins_array) as ArrayRef),
-            ("prcp", Arc::new(prcps_array) as ArrayRef),
-            ("lat", Arc::new(lats_array) as ArrayRef),
-            ("lon", Arc::new(lons_array) as ArrayRef),
-        ];
-
-        // Ensure all columns have the same number of rows
-        let num_rows = columns.first().map(|(_, col)| col.len()).unwrap_or(0);
-        for (name, array) in &columns {
-            assert_eq!(
-                array.len(),
-                num_rows,
-                "Column '{}' has incorrect number of rows: expected {}, got {}",
-                name,
-                num_rows,
-                array.len()
-            );
-        }
-
-        // Create RecordBatch
-        let batch = RecordBatch::try_from_iter(columns).expect("Failed to create record batch");
-
-        writer.write(&batch)?;
     }
-    pb.finish_with_message("Finished writing Parquet file");
 
+    // Write remaining data
+    if current_batch_rows > 0 {
+        write_batch(&mut writer, &ids, &dates, &elements, &datasets, &values, &lats, &lons)?;
+    }
+
+    pb.finish_with_message("Finished writing Parquet file");
     writer.close()?;
     Ok(())
+}
+
+fn write_batch(
+    writer: &mut ArrowWriter<File>,
+    ids: &[String],
+    dates: &[i32],
+    elements: &[String],
+    datasets: &[String],
+    values: &[f32],
+    lats: &[Option<f32>],
+    lons: &[Option<f32>],
+) -> Result<()> {
+    let ids_array = StringArray::from(ids.to_vec());
+    let dates_array = Date32Array::from(dates.to_vec());
+    let elements_array = StringArray::from(elements.to_vec());
+    let datasets_array = StringArray::from(datasets.to_vec());
+    let values_array = Float32Array::from(values.to_vec());
+    let lats_array = Float32Array::from(lats.to_vec());
+    let lons_array = Float32Array::from(lons.to_vec());
+
+    // Create schema for this batch
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Utf8, false),
+        Field::new("date", DataType::Date32, false),
+        Field::new("element", DataType::Utf8, false),
+        Field::new("dataset", DataType::Utf8, false),
+        Field::new("value", DataType::Float32, false),
+        Field::new("lat", DataType::Float32, true),
+        Field::new("lon", DataType::Float32, true),
+    ]));
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(ids_array),
+            Arc::new(dates_array),
+            Arc::new(elements_array),
+            Arc::new(datasets_array),
+            Arc::new(values_array),
+            Arc::new(lats_array),
+            Arc::new(lons_array),
+        ],
+    )?;
+
+    writer.write(&batch)?;
+    Ok(())
+}
+
+fn element_to_string(element: &Element) -> String {
+    match element {
+        Element::Tmax => "TMAX".to_string(),
+        Element::Tmin => "TMIN".to_string(),
+        Element::Prcp => "PRCP".to_string(),
+        _ => "UNKNOWN".to_string(),
+    }
+}
+
+fn dataset_to_string(dataset: &crate::reading::Dataset) -> String {
+    match dataset {
+        crate::reading::Dataset::Raw => "RAW".to_string(),
+        crate::reading::Dataset::Tob => "TOB".to_string(),
+        crate::reading::Dataset::Fls52 => "FLS52".to_string(),
+        _ => "UNKNOWN".to_string(),
+    }
 }
 
 // -- Tests -------------------------------------------------------------------
@@ -185,7 +182,7 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
 #[cfg(test)]
 mod test {
     use std::fs;
-    use arrow::array::Array;
+    use arrow::array::{Array, StringArray};
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
     use tempfile::NamedTempFile;
 
@@ -205,7 +202,7 @@ mod test {
     }
 
     #[test]
-    fn should_validate_parquet_schema_and_data() {
+    fn should_validate_new_long_format_schema_and_data() {
         // Create test readings with known data
         let readings = comprehensive_test_fixture();
         
@@ -232,37 +229,120 @@ mod test {
             let batch = batch_result.unwrap();
             total_rows += batch.num_rows();
             
-            // Validate schema
+            // Validate new long format schema
             let schema = batch.schema();
             assert_eq!(schema.fields().len(), 7);
             assert_eq!(schema.field(0).name(), "id");
             assert_eq!(schema.field(1).name(), "date");
-            assert_eq!(schema.field(2).name(), "tmax");
-            assert_eq!(schema.field(3).name(), "tmin");
-            assert_eq!(schema.field(4).name(), "prcp");
+            assert_eq!(schema.field(2).name(), "element");
+            assert_eq!(schema.field(3).name(), "dataset");
+            assert_eq!(schema.field(4).name(), "value");
             assert_eq!(schema.field(5).name(), "lat");
             assert_eq!(schema.field(6).name(), "lon");
             
-            // Count non-null values in each measurement column
-            let tmax_array = batch.column(2);
-            let tmin_array = batch.column(3);
-            let prcp_array = batch.column(4);
+            // Count element types
+            let element_array = batch.column(2);
+            let value_array = batch.column(4);
             
-            tmax_count += tmax_array.len() - tmax_array.null_count();
-            tmin_count += tmin_array.len() - tmin_array.null_count();
-            prcp_count += prcp_array.len() - prcp_array.null_count();
+            // All values should be non-null in long format
+            assert_eq!(value_array.null_count(), 0);
+            
+            // Count elements by type
+            if let Some(string_array) = element_array.as_any().downcast_ref::<StringArray>() {
+                for i in 0..batch.num_rows() {
+                    let element_str = string_array.value(i);
+                    match element_str {
+                        "TMAX" => tmax_count += 1,
+                        "TMIN" => tmin_count += 1,
+                        "PRCP" => prcp_count += 1,
+                        _ => {}
+                    }
+                }
+            }
         }
         
-        // Validate expected data structure
-        // Each reading should produce 31 rows (days), so 3 readings = 93 rows
+        // In long format, we only have rows for actual values (no nulls)
+        // Each reading has 31 non-null values, so 3 readings = 93 rows total
         assert_eq!(total_rows, 93);
-        
-        // Only tmax reading should have non-null tmax values (31 values)
-        // Only tmin reading should have non-null tmin values (31 values)  
-        // Only prcp reading should have non-null prcp values (31 values)
         assert_eq!(tmax_count, 31);
         assert_eq!(tmin_count, 31);
         assert_eq!(prcp_count, 31);
+    }
+
+    #[test] 
+    fn should_demonstrate_efficiency_improvement() {
+        // Create test data with realistic sparsity
+        let readings = create_realistic_test_data();
+        
+        // Create temporary files
+        let new_file = NamedTempFile::new().unwrap();
+        let new_path = new_file.path().to_path_buf();
+        
+        // Save with new long format
+        save_daily(&readings, &new_path).unwrap();
+        
+        // Check file size and row count
+        let new_file_size = fs::metadata(&new_path).unwrap().len();
+        
+        // Read back to count rows
+        let file = fs::File::open(&new_path).unwrap();
+        let reader = ParquetRecordBatchReaderBuilder::try_new(file)
+            .unwrap()
+            .build()
+            .unwrap();
+        
+        let mut actual_rows = 0;
+        for batch_result in reader {
+            let batch = batch_result.unwrap();
+            actual_rows += batch.num_rows();
+        }
+        
+        // With old format, this would be 100 readings * 31 days = 3,100 rows
+        // With new format, we only have rows for actual values
+        let expected_old_format_rows = readings.len() * 31;
+        
+        println!("New long format:");
+        println!("  File size: {} bytes", new_file_size);
+        println!("  Actual rows: {}", actual_rows);
+        println!("Old wide format would have:");
+        println!("  Rows: {} (with ~68% NULL values)", expected_old_format_rows);
+        
+        // New format should have significantly fewer rows (only non-null values)
+        assert!(actual_rows < expected_old_format_rows);
+        // Should be roughly 32% of old format rows (since ~68% were NULL)
+        let ratio = actual_rows as f64 / (expected_old_format_rows as f64);
+        assert!(ratio < 0.5);
+    }
+
+    fn create_realistic_test_data() -> Vec<DailyReading> {
+        let mut readings = Vec::new();
+        
+        // Create 100 stations with realistic data patterns
+        for station_id in 0..100 {
+            let mut values = vec![None; 31];
+            
+            // Fill only some days with data (realistic sparsity)
+            for day in 0..31 {
+                if day % 3 == 0 {  // Roughly 1/3 of days have data
+                    values[day] = Some(20.0 + day as f32);
+                }
+            }
+            
+            readings.push(DailyReading {
+                id: format!("USW000{:05}", station_id),
+                lat: Some(40.0 + station_id as f32 * 0.1),
+                lon: Some(-100.0 + station_id as f32 * 0.1),
+                year: 2024,
+                month: Some(1),
+                properties: FileProperties {
+                    dataset: Dataset::Unknown,
+                    element: Element::Tmax,
+                },
+                values,
+            });
+        }
+        
+        readings
     }
 
     #[test]
