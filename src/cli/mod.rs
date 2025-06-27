@@ -35,9 +35,26 @@ pub fn create_spinner(message: String) -> ProgressBar {
 
 /// Creates a progress bar.
 pub fn create_progress_bar(size: u64, message: String) -> ProgressBar {
-    ProgressBar::new(size).with_message(message).with_style(
-        ProgressStyle::with_template("[{eta_precise}] {bar:40.cyan/blue} {msg}")
+    let bar = ProgressBar::new(size);
+    bar.set_style(
+        ProgressStyle::with_template("{msg} [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) {eta}")
             .unwrap()
-            .progress_chars("##-"),
-    )
+            .progress_chars("=> "),
+    );
+    bar.set_message(message);
+    bar
 }
+
+/// Creates an indeterminate progress bar (for unknown total size).
+pub fn create_indeterminate_progress_bar(message: String) -> ProgressBar {
+    let bar = ProgressBar::new_spinner();
+    bar.set_style(
+        ProgressStyle::with_template("{msg} {spinner:.green}")
+            .unwrap()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+    );
+    bar.set_message(message);
+    bar.enable_steady_tick(Duration::from_millis(100));
+    bar
+}
+

@@ -8,10 +8,10 @@ use anyhow::{anyhow, Result};
 use tempfile::TempDir;
 
 use crate::{
-    cli::{command::stations::Station, create_spinner},
+    cli::{command::stations::Station, create_indeterminate_progress_bar},
     command::stations::{download_archive as download_station_archive, extract_stations},
     deserialise::deserialise,
-    download::{download_tar, extract_tar},
+    download::{download_tar_with_progress, extract_tar_with_progress},
     parquet,
     reading::DailyReading,
 };
@@ -22,14 +22,9 @@ pub async fn daily() -> Result<String> {
     let tmp_dir = TempDir::new()?;
     let parquet_file_name = make_parquet_file_name("daily");
 
-    // Download both archives in parallel
-    let daily_download = download_archive(tmp_dir.path());
-    let stations_download = download_station_archive(tmp_dir.path());
-    
-    let (daily_archive_filepath, stations_archive_filepath) = tokio::try_join!(
-        daily_download,
-        stations_download
-    )?;
+    // Download archives sequentially to avoid progress bar conflicts
+    let daily_archive_filepath = download_archive(tmp_dir.path()).await?;
+    let stations_archive_filepath = download_station_archive(tmp_dir.path()).await?;
 
     // Extract daily archive and process stations file in parallel
     let daily_extraction = extract_archive(&daily_archive_filepath);
@@ -62,8 +57,8 @@ async fn download_archive(temp_dir: &Path) -> Result<PathBuf> {
     let file_name = url.split('/').last().unwrap();
     let file_path = temp_dir.join(file_name);
 
-    let bar = create_spinner("Downloading daily archive (parallel)...".to_string());
-    download_tar(url, file_path.clone()).await?;
+    let bar = create_indeterminate_progress_bar("Downloading daily archive...".to_string());
+    download_tar_with_progress(url, file_path.clone(), bar.clone()).await?;
     bar.finish_with_message("✓ Daily archive downloaded");
 
     Ok(file_path)
@@ -72,9 +67,9 @@ async fn download_archive(temp_dir: &Path) -> Result<PathBuf> {
 async fn extract_archive(archive_filepath: &PathBuf) -> Result<PathBuf> {
     let archive_dir = archive_filepath.parent().unwrap();
 
-    let bar = create_spinner("Unpacking daily archives...".to_string());
-    extract_tar(archive_filepath, archive_dir).await?;
-    bar.finish_with_message("Daily archives unpacked");
+    let bar = create_indeterminate_progress_bar("Extracting daily archive files...".to_string());
+    extract_tar_with_progress(archive_filepath, archive_dir, bar.clone()).await?;
+    bar.finish_with_message("✓ Daily archive extracted");
 
     let extraction_dir = get_archive_dir(archive_dir)?;
 

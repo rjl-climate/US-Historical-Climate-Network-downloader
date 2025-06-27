@@ -13,7 +13,7 @@ anyhow = "1.0.86"
 flate2 = "1.0.30"
 futures = "0.3.30"
 indicatif = "0.17.8"
-reqwest = "0.12.5"
+reqwest = { version = "0.12.5", features = ["stream"] }
 tokio = { version = "1.38.0", features = ["rt-multi-thread", "macros"] }
 arrow = "52.1.0"
 parquet = { version = "52.1.0", features = ["async"] }
