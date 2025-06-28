@@ -58,7 +58,21 @@ fn parse_daily_values(line: &str) -> Vec<Option<f32>> {
 
     let values: Vec<Option<f32>> = (0..num_chunks)
         .map(|i| {
-            let chunk = &line[start_pos + i * chunk_length..start_pos + (i + 1) * chunk_length];
+            let start_index = start_pos + i * chunk_length;
+            let end_index = start_pos + (i + 1) * chunk_length;
+            
+            // Check bounds to prevent panic
+            if end_index > line.len() {
+                return None;
+            }
+            
+            let chunk = &line[start_index..end_index];
+            
+            // Additional check for chunk length
+            if chunk.len() < 5 {
+                return None;
+            }
+            
             let first_five = &chunk[..5].trim();
             match first_five.parse::<i32>() {
                 Ok(v) if v != -9999 => Some((v as f32) / 10.0),

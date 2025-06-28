@@ -1,11 +1,19 @@
 [package]
 name = "ushcn"
-version = "0.2.2"
+version = "0.2.4"
 authors = ["Richard Lyon <richlyon@fastmail.com>"]
 edition = "2021"
 description = "US Historical Climatology Network data downloader"
 repository = "https://github.com/rjl-climate/US-Historical-Climate-Network-downloader"
 license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "ushcn"
+path = "src/main.rs"
+
+[[bin]]
+name = "investigate_monthly"
+path = "src/bin/investigate_monthly.rs"
 
 [dependencies]
 tar = "0.4.41"

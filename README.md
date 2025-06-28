@@ -1,8 +1,16 @@
 # US Historical Climate Network data downloader
 
-[NOAA](https://www.ncei.noaa.gov/products/land-based-station/us-historical-climatology-network) maintains a [dataset of daily climate data](https://www.ncei.noaa.gov/pub/data/ghcn/daily/) for the US from 1875 to present. Data includes daily maximum and minimum temperatures, and precipitation, for 1,200 stations.
+[NOAA](https://www.ncei.noaa.gov/products/land-based-station/us-historical-climatology-network) maintains datasets of daily and monthly climate data for the US from 1875 to present. Data includes maximum and minimum temperatures, precipitation, and other climate variables from 1,200+ weather stations with complete geographic coordinates.
 
-The daily raw data is a zipped text format that requires processing for further use:
+This tool downloads and processes two complementary datasets:
+
+- **Daily data**: From the Global Historical Climatology Network (GHCN) with measurements from 1875-present
+- **Monthly data**: From the US Historical Climatology Network (USHCN) in three quality-controlled variants:
+  - **Raw**: Original unadjusted data as received from stations
+  - **TOB**: Time-of-observation bias adjusted data
+  - **FLS52**: Fully corrected and homogenized data
+
+The data is distributed as fixed-width text files that require processing for analysis:
 
 ```text
 USC00011084192601TMAX-9999   -9999   -9999   -9999   -9999   -9999 ...
@@ -11,56 +19,113 @@ USC00011084192602PRCP    0  6  381  6    0  6    0  6    0  6    0 ...
 ...
 ```
 
-This repository provides a rust binary that downloads the data, unzips it, and saves it as an [Apache Parquet datafile](https://parquet.apache.org/). This file is easy to ingest into a Python dataframe for processing:
+This repository provides a Rust binary that downloads the daily and monthly datasets, processes them, injects lat/lon coordinate data, and saves them as optimized [Apache Parquet files](https://parquet.apache.org/):
 
 ```text
-                     id   tmax  tmin  prcp
-date
-1898-06-14  USC00324418   NaN    6.7   1.2
-1898-06-15  USC00324418   NaN    7.8   0.0
-1898-06-16  USC00324418   12.3   5.6   0.0
-1898-06-17  USC00324418   14.4   8.9   0.1
-1898-06-18  USC00324418   19.1   7.2   1.2
+# Daily data (long format with all measurements)
+        id       date element  value     lat      lon
+0  USC00324418 1898-06-14    TMAX   12.3  34.428  -86.2467
+1  USC00324418 1898-06-14    TMIN    6.7  34.428  -86.2467
+2  USC00324418 1898-06-14    PRCP    1.2  34.428  -86.2467
+3  USC00324418 1898-06-15    TMAX   14.4  34.428  -86.2467
 ...
+
+# Monthly data (separate files by quality level)
+# ushcn-monthly-raw-2025-06-27.parquet     (original data)
+# ushcn-monthly-tob-2025-06-27.parquet     (time-adjusted)
+# ushcn-monthly-fls52-2025-06-27.parquet   (fully corrected)
 ```
 
 ## Usage
 
+The binary downloads and processes all data types automatically:
+
 ```bash
-> ghcn daily
-Downloading
-Unpacking
-...
-File saved to `/Users/richardlyon/ushcn-daily-2024-07-16.parquet`
+# Download to temporary directory (default)
+> ushcn
+Downloading and processing US Historical Climate Network data...
 
-> ghcn monthly
-Downloading
-Unpacking
-...
-File saved to `/Users/richardlyon/ushcn-monthly-2024-07-16.parquet`
+Downloading USHCN stations data...
+USHCN Stations: /Users/richardlyon/ushcn-stations-2025-06-27.parquet
 
-> ghcn stations
-Downloading
-ile saved to `/Users/richardlyon/ghcnd-stations-2024-07-17.parquet`
+Downloading GHCN stations data...
+GHCN Stations: /Users/richardlyon/ghcnd-stations-2025-06-27.parquet
 
+Processing daily data...
+✓ Created daily parquet file with 1,268,938 readings
+Daily: Created 1 daily file: /Users/richardlyon/ushcn-daily-2025-06-27.parquet
+
+Processing monthly data...
+✓ Created RAW monthly parquet file with 443,135 readings
+✓ Created TOB monthly parquet file with 443,117 readings
+✓ Created FLS52 monthly parquet file with 491,028 readings
+Monthly: Created 3 monthly dataset files: ushcn-monthly-raw-2025-06-27.parquet, ushcn-monthly-tob-2025-06-27.parquet, ushcn-monthly-fls52-2025-06-27.parquet
+
+# Use persistent cache (faster on subsequent runs)
+> ushcn --cache
 ```
 
-Not included in this repository are any scripts for processing the data. However, as an example:
+## Output Files
+
+The tool generates multiple parquet files optimized for analysis with complete coordinate data:
+
+- **Daily data**: `ushcn-daily-{date}.parquet` - Long format with one row per measurement (~37M rows with 100% lat/lon coverage)
+- **Monthly data**: `ushcn-monthly-{dataset}-{date}.parquet` - Separate files for raw, time-adjusted, and fully corrected data (~5M rows each with 100% lat/lon coverage)
+- **Station metadata**:
+  - `ushcn-stations-{date}.parquet` - USHCN station coordinates (1,218 stations)
+  - `ghcnd-stations-{date}.parquet` - GHCN station coordinates (129,000+ stations)
+
+## Python Analysis Example
+
+The optimized parquet files work seamlessly with pandas and other Python data analysis tools:
 
 ```python
 import pandas as pd
 import matplotlib.pyplot as plt
 
-parquet_file_path = Path("/path/to/ghcnd_hcn.parquet")
-df = pd.read_parquet(parquet_file_path)
-df.set_index("date", inplace=True)
-df = df.groupby(df.index)["tmax"].max()
-df.plot(y="tmax", kind="line", title="Max Temp")
+# Load daily data (long format with coordinates)
+daily_df = pd.read_parquet("ushcn-daily-2025-06-27.parquet")
+daily_df['date'] = pd.to_datetime(daily_df['date'])
+
+print(f"Daily data: {len(daily_df):,} rows with {daily_df['lat'].notna().sum():,} coordinate pairs")
+# Output: Daily data: 37,874,655 rows with 37,874,655 coordinate pairs
+
+# Filter for temperature data and plot
+tmax_data = daily_df[daily_df['element'] == 'TMAX'].set_index('date')
+tmax_monthly = tmax_data.groupby(pd.Grouper(freq='M'))['value'].mean()
+tmax_monthly.plot(title="Average Monthly Maximum Temperature")
+
+# Compare raw vs. corrected monthly data (both with full coordinates)
+raw_monthly = pd.read_parquet("ushcn-monthly-raw-2025-06-27.parquet")
+corrected_monthly = pd.read_parquet("ushcn-monthly-fls52-2025-06-27.parquet")
+
+print(f"Monthly coverage: {raw_monthly['lat'].notna().sum() / len(raw_monthly) * 100:.1f}%")
+# Output: Monthly coverage: 100.0%
+
+# Geospatial analysis with complete coordinate data
+import geopandas as gpd
+station_coords = daily_df[['id', 'lat', 'lon']].drop_duplicates()
+gdf = gpd.GeoDataFrame(station_coords,
+                      geometry=gpd.points_from_xy(station_coords.lon, station_coords.lat))
 ```
 
 ![max_temp](max_temp.png)
 
+## Features
+
+- **Complete coordinate coverage**: All data includes precise latitude/longitude coordinates (100% coverage)
+- **Dual dataset integration**: Combines GHCN daily and USHCN monthly data with appropriate station metadata
+- **Multi-dataset support**: Automatically generates separate files for raw, time-adjusted, and fully corrected monthly data
+- **Optimized format**: Uses ZSTD compression and dictionary encoding for efficient storage and fast Python loading
+- **Long format**: Daily data uses a tidy long format optimal for analysis (one row per measurement)
+- **Caching**: Optional persistent caching to speed up subsequent runs
+- **Error handling**: Robust parsing with bounds checking for malformed data records
+- **Parallel processing**: Concurrent downloads and processing for improved performance
+- **Geospatial ready**: Perfect for spatial analysis, mapping, and climate research
+
 ## Change log
 
-- 0.2.1 - Fix bug in monthly data download.
+- 0.2.4 - Complete coordinate injection fix: 100% lat/lon coverage for both daily and monthly data
+- 0.2.3 - Major refactor: Multi-parquet output, optimized compression, simplified CLI, parsing fixes
 - 0.2.2 - Add lat/lon to daily readings
+- 0.2.1 - Fix bug in monthly data download

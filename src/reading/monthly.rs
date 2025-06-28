@@ -17,6 +17,10 @@ pub struct MonthlyReading {
     pub properties: FileProperties,
     /// reading values
     pub values: Vec<Option<f32>>,
+    /// latitude of the station
+    pub lat: Option<f32>,
+    /// longitude of the station
+    pub lon: Option<f32>,
 }
 
 impl Reading for MonthlyReading {
@@ -33,6 +37,8 @@ impl Reading for MonthlyReading {
             month,
             properties,
             values,
+            lat: None,
+            lon: None,
         })
     }
 

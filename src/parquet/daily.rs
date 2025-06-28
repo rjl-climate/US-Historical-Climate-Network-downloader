@@ -4,7 +4,7 @@ use std::{fs::File, path::PathBuf, sync::Arc};
 
 use anyhow::Result;
 use arrow::{
-    array::{Date32Array, Float32Array, StringArray},
+    array::{Date32Builder, Float32Builder, StringBuilder},
     datatypes::{DataType, Field, Schema},
     record_batch::RecordBatch,
 };
@@ -31,7 +31,7 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
 
     let file = File::create(file_path)?;
 
-    // New efficient long format schema
+    // Optimized schema with better compression for Python processing
     let schema = Arc::new(Schema::new(vec![
         Field::new("id", DataType::Utf8, false),
         Field::new("date", DataType::Date32, false),
@@ -43,24 +43,33 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
     ]));
 
     let props = WriterProperties::builder()
-        .set_compression(parquet::basic::Compression::SNAPPY)
+        .set_compression(parquet::basic::Compression::ZSTD(parquet::basic::ZstdLevel::default()))  // Better compression for Python
+        .set_dictionary_enabled(true)  // Enable dictionary encoding for repeated strings
         .build();
 
     let mut writer = ArrowWriter::try_new(file, schema.clone(), Some(props))?;
     let pb = create_progress_bar(total_actual_rows as u64, "Writing parquet file".to_string());
 
+    // Pre-allocate builders for better performance
+    let mut id_builder = StringBuilder::with_capacity(chunk_size, chunk_size * 12);
+    let mut date_builder = Date32Builder::with_capacity(chunk_size);
+    let mut element_builder = StringBuilder::with_capacity(chunk_size, chunk_size * 4);
+    let mut dataset_builder = StringBuilder::with_capacity(chunk_size, chunk_size * 6);
+    let mut value_builder = Float32Builder::with_capacity(chunk_size);
+    let mut lat_builder = Float32Builder::with_capacity(chunk_size);
+    let mut lon_builder = Float32Builder::with_capacity(chunk_size);
+
+    // Pre-calculate epoch offset
+    let epoch_offset = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap().num_days_from_ce();
+
     let mut current_batch_rows = 0;
-    let mut ids = Vec::with_capacity(chunk_size);
-    let mut dates = Vec::with_capacity(chunk_size);
-    let mut elements = Vec::with_capacity(chunk_size);
-    let mut datasets = Vec::with_capacity(chunk_size);
-    let mut values = Vec::with_capacity(chunk_size);
-    let mut lats = Vec::with_capacity(chunk_size);
-    let mut lons = Vec::with_capacity(chunk_size);
+    let mut progress_counter = 0;
 
     for reading in readings {
         let year = reading.year;
         let month = reading.month.unwrap();
+        
+        // Pre-calculate strings once per reading  
         let element_str = element_to_string(&reading.properties.element);
         let dataset_str = dataset_to_string(&reading.properties.dataset);
 
@@ -68,34 +77,32 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
             if let Some(value) = value_opt {
                 let day = (day_index + 1) as u32;
                 
-                // Create date
+                // Create date - optimized calculation
                 if let Some(valid_date) = NaiveDate::from_ymd_opt(year as i32, month as u32, day) {
-                    let date32 = valid_date.num_days_from_ce()
-                        - NaiveDate::from_ymd_opt(1970, 1, 1).unwrap().num_days_from_ce();
+                    let date32 = valid_date.num_days_from_ce() - epoch_offset;
 
-                    ids.push(reading.id.clone());
-                    dates.push(date32);
-                    elements.push(element_str.clone());
-                    datasets.push(dataset_str.clone());
-                    values.push(*value);
-                    lats.push(reading.lat);
-                    lons.push(reading.lon);
+                    // Use builders for better performance
+                    id_builder.append_value(&reading.id);
+                    date_builder.append_value(date32);
+                    element_builder.append_value(&element_str);
+                    dataset_builder.append_value(&dataset_str);
+                    value_builder.append_value(*value);
+                    lat_builder.append_option(reading.lat);
+                    lon_builder.append_option(reading.lon);
 
                     current_batch_rows += 1;
-                    pb.inc(1);
+                    progress_counter += 1;
+
+                    // Batch progress updates for better performance
+                    if progress_counter % 10000 == 0 {
+                        pb.set_position(progress_counter as u64);
+                    }
 
                     // Write batch when full
                     if current_batch_rows >= chunk_size {
-                        write_batch(&mut writer, &ids, &dates, &elements, &datasets, &values, &lats, &lons)?;
-                        
-                        // Clear vectors
-                        ids.clear();
-                        dates.clear();
-                        elements.clear();
-                        datasets.clear();
-                        values.clear();
-                        lats.clear();
-                        lons.clear();
+                        write_batch_optimized(&mut writer, &schema, &mut id_builder, &mut date_builder, 
+                                            &mut element_builder, &mut dataset_builder, &mut value_builder, 
+                                            &mut lat_builder, &mut lon_builder)?;
                         current_batch_rows = 0;
                     }
                 }
@@ -105,7 +112,9 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
 
     // Write remaining data
     if current_batch_rows > 0 {
-        write_batch(&mut writer, &ids, &dates, &elements, &datasets, &values, &lats, &lons)?;
+        write_batch_optimized(&mut writer, &schema, &mut id_builder, &mut date_builder, 
+                            &mut element_builder, &mut dataset_builder, &mut value_builder, 
+                            &mut lat_builder, &mut lon_builder)?;
     }
 
     pb.finish_with_message("Finished writing Parquet file");
@@ -113,37 +122,27 @@ pub fn save_daily(readings: &[DailyReading], file_path: &PathBuf) -> Result<()> 
     Ok(())
 }
 
-fn write_batch(
+fn write_batch_optimized(
     writer: &mut ArrowWriter<File>,
-    ids: &[String],
-    dates: &[i32],
-    elements: &[String],
-    datasets: &[String],
-    values: &[f32],
-    lats: &[Option<f32>],
-    lons: &[Option<f32>],
+    schema: &Arc<Schema>,
+    id_builder: &mut StringBuilder,
+    date_builder: &mut Date32Builder,
+    element_builder: &mut StringBuilder,
+    dataset_builder: &mut StringBuilder,
+    value_builder: &mut Float32Builder,
+    lat_builder: &mut Float32Builder,
+    lon_builder: &mut Float32Builder,
 ) -> Result<()> {
-    let ids_array = StringArray::from(ids.to_vec());
-    let dates_array = Date32Array::from(dates.to_vec());
-    let elements_array = StringArray::from(elements.to_vec());
-    let datasets_array = StringArray::from(datasets.to_vec());
-    let values_array = Float32Array::from(values.to_vec());
-    let lats_array = Float32Array::from(lats.to_vec());
-    let lons_array = Float32Array::from(lons.to_vec());
-
-    // Create schema for this batch
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("id", DataType::Utf8, false),
-        Field::new("date", DataType::Date32, false),
-        Field::new("element", DataType::Utf8, false),
-        Field::new("dataset", DataType::Utf8, false),
-        Field::new("value", DataType::Float32, false),
-        Field::new("lat", DataType::Float32, true),
-        Field::new("lon", DataType::Float32, true),
-    ]));
+    let ids_array = id_builder.finish();
+    let dates_array = date_builder.finish();
+    let elements_array = element_builder.finish();
+    let datasets_array = dataset_builder.finish();
+    let values_array = value_builder.finish();
+    let lats_array = lat_builder.finish();
+    let lons_array = lon_builder.finish();
 
     let batch = RecordBatch::try_new(
-        schema,
+        schema.clone(),
         vec![
             Arc::new(ids_array),
             Arc::new(dates_array),

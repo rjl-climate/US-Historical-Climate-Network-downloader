@@ -55,7 +55,7 @@ impl FileProperties {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 /// Represents the type of dataset. See the [NOAA documentation](https://www1.ncdc.noaa.gov/pub/data/cdo/documentation/gsom-gsoy_documentation.pdf)
 /// for more information.
 pub enum Dataset {

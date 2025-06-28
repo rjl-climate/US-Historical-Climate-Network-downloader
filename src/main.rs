@@ -13,17 +13,23 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! > ushcn daily
-//! Downloading
-//! Unpacking
-//! ...
-//! File saved to `/Users/richardlyon/ushcn-daily-2024-07-16.parquet`
+//! > ushcn
+//! Downloading and processing US Historical Climate Network data...
+//! 
+//! Processing daily data...
+//! Daily: Created 1 dataset files: ushcn-daily-unknown-2024-07-16.parquet
+//! 
+//! Processing monthly data...
+//! Monthly: Created 3 dataset files: ushcn-monthly-raw-2024-07-16.parquet, ushcn-monthly-tob-2024-07-16.parquet, ushcn-monthly-fls52-2024-07-16.parquet
+//! 
+//! Processing stations data...
+//! Stations: ushcn-stations-2024-07-16.parquet
 //! ```
 
 use anyhow::{Error, Result};
 use clap::Parser;
 
-use cli::{Cli, command, Commands};
+use cli::{Cli, command};
 
 mod cli;
 mod deserialise;
@@ -36,19 +42,46 @@ mod reading;
 async fn main() -> Result<(), Error> {
     let cli = Cli::parse();
 
-    match &cli.command {
-        Commands::Daily {} => match command::daily().await {
-            Ok(filename) => println!("File saved to `{}`", filename),
-            Err(e) => eprintln!("Error: {}", e),
+    println!("Downloading and processing US Historical Climate Network data...\n");
+
+    // Download USHCN stations data for monthly coordinate injection
+    println!("Downloading USHCN stations data...");
+    let ushcn_stations = match command::stations(cli.cache).await {
+        Ok((result, stations_data)) => {
+            println!("USHCN Stations: {}\n", result);
+            stations_data
         },
-        Commands::Monthly {} => match command::monthly().await {
-            Ok(filename) => println!("File saved to `{}`", filename),
-            Err(e) => eprintln!("Error: {}", e),
+        Err(e) => {
+            eprintln!("USHCN Stations error: {}\n", e);
+            return Ok(());
+        }
+    };
+
+    // Download GHCN stations data for daily coordinate injection
+    println!("Downloading GHCN stations data...");
+    let ghcn_stations = match command::ghcn_stations(cli.cache).await {
+        Ok((result, stations_data)) => {
+            println!("GHCN Stations: {}\n", result);
+            stations_data
         },
-        Commands::Stations {} => match command::stations().await {
-            Ok(filename) => println!("Stations saved to `{}`", filename),
-            Err(e) => eprintln!("Error: {}", e),
-        },
+        Err(e) => {
+            eprintln!("GHCN Stations error: {}\n", e);
+            return Ok(());
+        }
+    };
+
+    // Generate daily data with GHCN stations for coordinate injection
+    println!("Processing daily data...");
+    match command::daily(cli.cache, &ghcn_stations).await {
+        Ok(result) => println!("Daily: {}\n", result),
+        Err(e) => eprintln!("Daily error: {}\n", e),
+    }
+
+    // Generate monthly data with USHCN stations for coordinate injection
+    println!("Processing monthly data...");
+    match command::monthly(cli.cache, &ushcn_stations).await {
+        Ok(result) => println!("Monthly: {}\n", result),
+        Err(e) => eprintln!("Monthly error: {}\n", e),
     }
 
     Ok(())

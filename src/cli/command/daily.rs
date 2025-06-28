@@ -4,76 +4,111 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use dirs;
+
 use anyhow::{anyhow, Result};
-use tempfile::TempDir;
 
 use crate::{
     cli::{command::stations::Station, create_indeterminate_progress_bar},
-    command::stations::{download_archive as download_station_archive, extract_stations},
     deserialise::deserialise,
     download::{download_tar_with_progress, extract_tar_with_progress},
     parquet,
-    reading::DailyReading,
+    reading::{DailyReading, Dataset},
 };
 
 use super::make_parquet_file_name;
 
-pub async fn daily() -> Result<String> {
-    let tmp_dir = TempDir::new()?;
-    let parquet_file_name = make_parquet_file_name("daily");
+pub async fn daily(use_persistent_cache: bool, stations: &[Station]) -> Result<String> {
+    let cache_dir = get_cache_dir(use_persistent_cache)?;
 
-    // Download archives sequentially to avoid progress bar conflicts
-    let daily_archive_filepath = download_archive(tmp_dir.path()).await?;
-    let stations_archive_filepath = download_station_archive(tmp_dir.path()).await?;
-
-    // Extract daily archive and process stations file in parallel
-    let daily_extraction = extract_archive(&daily_archive_filepath);
-    let stations_task = tokio::task::spawn_blocking({
-        let stations_path = stations_archive_filepath.clone();
-        move || extract_stations(&stations_path)
-    });
-
-    let (archive_dir, stations_handle) = tokio::try_join!(
-        daily_extraction,
-        async { 
-            stations_task.await
-                .map_err(|e| anyhow::anyhow!("Stations extraction task failed: {}", e))
-        }
-    )?;
-    
-    let stations = stations_handle?;
+    // Download and extract daily archive
+    let daily_archive_filepath = download_archive_cached(&cache_dir).await?;
+    let archive_dir = extract_archive_cached(&daily_archive_filepath, &cache_dir).await?;
 
     // Deserialize readings and inject coordinates
     let mut readings = deserialise(&archive_dir).await?;
-    readings = inject_coords(readings, stations)?;
+    readings = inject_coords(readings, stations.to_vec())?;
 
+    // Create single daily parquet file (GHCN daily data is not separated by dataset type)
+    let parquet_file_name = make_parquet_file_name("daily");
     parquet::save_daily(&readings, &parquet_file_name)?;
+    
+    println!("✓ Created daily parquet file with {} readings", readings.len());
 
-    Ok(parquet_file_name.to_string_lossy().to_string())
+    Ok(format!("Created 1 daily file: {}", 
+              parquet_file_name.to_string_lossy()))
 }
 
-async fn download_archive(temp_dir: &Path) -> Result<PathBuf> {
+fn dataset_to_string(dataset: &Dataset) -> String {
+    match dataset {
+        Dataset::Raw => "RAW".to_string(),
+        Dataset::Tob => "TOB".to_string(),
+        Dataset::Fls52 => "FLS52".to_string(),
+        _ => "UNKNOWN".to_string(),
+    }
+}
+
+fn get_cache_dir(use_persistent_cache: bool) -> Result<PathBuf> {
+    let cache_dir = if use_persistent_cache {
+        // Use persistent cache in Library directory
+        dirs::cache_dir()
+            .ok_or_else(|| anyhow!("Could not determine cache directory"))?
+            .join("ushcn")
+    } else {
+        // Use temporary directory
+        let temp_dir = std::env::temp_dir().join("ushcn");
+        temp_dir
+    };
+    
+    if !cache_dir.exists() {
+        fs::create_dir_all(&cache_dir)?;
+    }
+    
+    Ok(cache_dir)
+}
+
+async fn download_archive_cached(cache_dir: &Path) -> Result<PathBuf> {
     let url = "https://www.ncei.noaa.gov/pub/data/ghcn/daily/ghcnd_hcn.tar.gz";
     let file_name = url.split('/').last().unwrap();
-    let file_path = temp_dir.join(file_name);
+    let file_path = cache_dir.join(file_name);
+
+    // Check if cached file exists
+    if file_path.exists() {
+        println!("✓ Using cached daily archive: {}", file_path.display());
+        return Ok(file_path);
+    }
 
     let bar = create_indeterminate_progress_bar("Downloading daily archive...".to_string());
     download_tar_with_progress(url, file_path.clone(), bar.clone()).await?;
-    bar.finish_with_message("✓ Daily archive downloaded");
+    bar.finish_with_message("✓ Daily archive downloaded and cached");
 
     Ok(file_path)
 }
 
-async fn extract_archive(archive_filepath: &PathBuf) -> Result<PathBuf> {
-    let archive_dir = archive_filepath.parent().unwrap();
+
+async fn extract_archive_cached(archive_filepath: &PathBuf, cache_dir: &Path) -> Result<PathBuf> {
+    // Create extraction parent directory in cache
+    let extraction_parent = cache_dir.join("extracted");
+    
+    // Check if already extracted (look for the actual extracted directory)
+    if extraction_parent.exists() {
+        if let Ok(existing_dir) = get_archive_dir(&extraction_parent) {
+            println!("✓ Using cached extracted daily archive: {}", existing_dir.display());
+            return Ok(existing_dir);
+        }
+    }
+
+    // Ensure extraction parent directory exists
+    if !extraction_parent.exists() {
+        fs::create_dir_all(&extraction_parent)?;
+    }
 
     let bar = create_indeterminate_progress_bar("Extracting daily archive files...".to_string());
-    extract_tar_with_progress(archive_filepath, archive_dir, bar.clone()).await?;
-    bar.finish_with_message("✓ Daily archive extracted");
+    extract_tar_with_progress(archive_filepath, &extraction_parent, bar.clone()).await?;
+    bar.finish_with_message("✓ Daily archive extracted and cached");
 
-    let extraction_dir = get_archive_dir(archive_dir)?;
-
-    Ok(extraction_dir)
+    let final_dir = get_archive_dir(&extraction_parent)?;
+    Ok(final_dir)
 }
 
 // Gets the path to a directory in archive_dir if it is the only one

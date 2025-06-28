@@ -4,25 +4,16 @@ pub mod command;
 
 use std::time::Duration;
 
-use clap::{command, Parser, Subcommand};
+use clap::{command, Parser};
 use indicatif::{ProgressBar, ProgressStyle};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
-/// Contains the commands
+/// Download and process US Historical Climate Network data
 pub struct Cli {
-    #[command(subcommand)]
-    pub command: Commands,
-}
-
-#[derive(Subcommand)]
-pub enum Commands {
-    /// Get daily data
-    Daily {},
-    /// Get monthly data
-    Monthly {},
-    /// Get stations
-    Stations {},
+    /// Use persistent cache in Library directory
+    #[arg(long)]
+    pub cache: bool,
 }
 
 /// Creates a spinner.

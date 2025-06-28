@@ -7,24 +7,93 @@ use anyhow::Result;
 use tempfile::TempDir;
 
 use crate::{
-    cli::create_progress_bar,
+    cli::{command::stations::Station, create_progress_bar},
     deserialise::deserialise,
     download::{download_tar, extract_tar, get_extraction_folder},
     parquet,
+    reading::{Dataset, MonthlyReading},
 };
 
-use super::make_parquet_file_name;
+use super::make_dataset_parquet_file_name;
 
-pub async fn monthly() -> Result<String> {
+pub async fn monthly(_use_persistent_cache: bool, stations: &[Station]) -> Result<String> {
     let temp_dir = TempDir::new()?;
-    let parquet_file_name = make_parquet_file_name("monthly");
 
     let archive_paths = download_archives(temp_dir.path()).await?;
     let extraction_folder = extract_archives(&archive_paths, temp_dir.path()).await?;
-    let readings = deserialise(&extraction_folder).await?;
-    parquet::save_monthly(&readings, &parquet_file_name)?;
+    let mut readings: Vec<MonthlyReading> = deserialise(&extraction_folder).await?;
+    
+    // Inject coordinates using provided stations data
+    readings = inject_coords_monthly(readings, stations.to_vec())?;
+    
+    // Group readings by dataset type
+    let mut datasets = HashMap::new();
+    for reading in readings {
+        datasets.entry(reading.properties.dataset.clone())
+               .or_insert_with(Vec::new)
+               .push(reading);
+    }
 
-    Ok(parquet_file_name.to_string_lossy().to_string())
+    let mut created_files = Vec::new();
+
+    // Create separate parquet files for each dataset
+    for (dataset, dataset_readings) in datasets {
+        if dataset_readings.is_empty() {
+            continue;
+        }
+
+        let dataset_name = dataset_to_string(&dataset);
+        let parquet_file_name = make_dataset_parquet_file_name("monthly", &dataset_name);
+        
+        parquet::save_monthly(&dataset_readings, &parquet_file_name)?;
+        created_files.push(parquet_file_name.to_string_lossy().to_string());
+        
+        println!("✓ Created {} monthly parquet file with {} readings", 
+                dataset_name, dataset_readings.len());
+    }
+
+    // Return summary of created files
+    Ok(format!("Created {} monthly dataset files: {}", 
+              created_files.len(), 
+              created_files.join(", ")))
+}
+
+fn dataset_to_string(dataset: &Dataset) -> String {
+    match dataset {
+        Dataset::Raw => "RAW".to_string(),
+        Dataset::Tob => "TOB".to_string(),
+        Dataset::Fls52 => "FLS52".to_string(),
+        _ => "UNKNOWN".to_string(),
+    }
+}
+
+fn inject_coords_monthly(readings: Vec<MonthlyReading>, stations: Vec<Station>) -> Result<Vec<MonthlyReading>> {
+    let mut readings_with_coords = Vec::new();
+    let lookup = make_lookup_monthly(&stations);
+
+    for mut reading in readings {
+        if let Some(coords) = lookup.get(&reading.id) {
+            reading.lat = Some(coords.0);
+            reading.lon = Some(coords.1);
+        }
+
+        readings_with_coords.push(reading);
+    }
+
+    Ok(readings_with_coords)
+}
+
+// Make a lookup table of station IDs to lat/lon for monthly data
+fn make_lookup_monthly(stations: &Vec<Station>) -> HashMap<String, (f32, f32)> {
+    let mut lookup = HashMap::new();
+
+    for station in stations {
+        if let (Some(lat), Some(lon)) = (station.latitude, station.longitude) {
+            lookup.insert(station.station_id(), (lat, lon));
+        }
+    }
+
+    lookup
 }
 
 /// Download the monthly archives and return a vector of the paths to the downloaded files.

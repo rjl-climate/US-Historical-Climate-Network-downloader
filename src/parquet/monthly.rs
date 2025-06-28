@@ -35,6 +35,8 @@ pub fn save_monthly(readings: &[MonthlyReading], file_path: &PathBuf) -> Result<
         Field::new("avg_raw", DataType::Float32, true),
         Field::new("avg_tob", DataType::Float32, true),
         Field::new("avg_fls52", DataType::Float32, true),
+        Field::new("lat", DataType::Float32, true),
+        Field::new("lon", DataType::Float32, true),
     ]));
 
     let props = WriterProperties::builder()
@@ -63,6 +65,8 @@ pub fn save_monthly(readings: &[MonthlyReading], file_path: &PathBuf) -> Result<
         let mut avg_raws = Vec::with_capacity(batch_size);
         let mut avg_tobs = Vec::with_capacity(batch_size);
         let mut avg_fls52s = Vec::with_capacity(batch_size);
+        let mut lats = Vec::with_capacity(batch_size);
+        let mut lons = Vec::with_capacity(batch_size);
 
         let mut rows_in_batch = 0;
 
@@ -89,6 +93,11 @@ pub fn save_monthly(readings: &[MonthlyReading], file_path: &PathBuf) -> Result<
                 }
 
                 let idx = month - 1;
+                
+                // Add lat/lon for each row
+                lats.push(r.lat);
+                lons.push(r.lon);
+                
                 match r.properties.element {
                     Element::Max => match r.properties.dataset {
                         Dataset::Raw => {
@@ -267,6 +276,8 @@ pub fn save_monthly(readings: &[MonthlyReading], file_path: &PathBuf) -> Result<
         let avg_raws_array = Float32Array::from(avg_raws);
         let avg_tobs_array = Float32Array::from(avg_tobs);
         let avg_fls52s_array = Float32Array::from(avg_fls52s);
+        let lats_array = Float32Array::from(lats);
+        let lons_array = Float32Array::from(lons);
 
         // Create a vector for the RecordBatch
         let columns: Vec<(&str, ArrayRef)> = vec![
@@ -281,6 +292,8 @@ pub fn save_monthly(readings: &[MonthlyReading], file_path: &PathBuf) -> Result<
             ("avg_raw", Arc::new(avg_raws_array) as ArrayRef),
             ("avg_tob", Arc::new(avg_tobs_array) as ArrayRef),
             ("avg_fls52", Arc::new(avg_fls52s_array) as ArrayRef),
+            ("lat", Arc::new(lats_array) as ArrayRef),
+            ("lon", Arc::new(lons_array) as ArrayRef),
         ];
 
         // Ensure all columns have the same number of rows
