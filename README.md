@@ -77,7 +77,10 @@ The tool generates multiple parquet files optimized for analysis with complete c
 
 ## Python Analysis Example
 
-The optimized parquet files work seamlessly with pandas and other Python data analysis tools:
+The optimized parquet files work seamlessly with pandas and other Python data analysis tools. For
+a comprehensive example of its use, see the author's software package [Urban Heat Island Contamination in USHCN Temperature Records](https://github.com/rjl-climate/ushcn-heatisland).
+
+Simple examples:
 
 ```python
 import pandas as pd
@@ -125,6 +128,7 @@ gdf = gpd.GeoDataFrame(station_coords,
 
 ## Change log
 
+- 0.2.5 - Update README with a link to a comprehensive example of an application of the datasets
 - 0.2.4 - Complete coordinate injection fix: 100% lat/lon coverage for both daily and monthly data
 - 0.2.3 - Major refactor: Multi-parquet output, optimized compression, simplified CLI, parsing fixes
 - 0.2.2 - Add lat/lon to daily readings
